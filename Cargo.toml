@@ -1,0 +1,33 @@
+[package]
+name = "snip"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "snip"
+path = "src/main.rs"
+
+[[bin]]
+name = "snipped"
+path = "src/cli.rs"
+
+[dependencies]
+axum = "0.8"
+tokio = { version = "1.44", features = ["full"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["fs", "cors"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite", "migrate", "chrono"] }
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1.16", features = ["v4"] }
+bcrypt = "0.17"
+reqwest = { version = "0.12", features = ["json"] }
+clap = { version = "4.5", features = ["derive"] }
+anyhow = "1.0"
+thiserror = "2.0"
+tracing = "0.1"
+tracing-subscriber = "0.3"
+askama = "0.13"
+
+[dev-dependencies]
