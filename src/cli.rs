@@ -106,6 +106,18 @@ enum Command {
         id: i64,
     },
 
+    /// Star a snippet by ID
+    Star {
+        /// Snippet ID
+        id: i64,
+    },
+
+    /// Unstar a snippet by ID
+    Unstar {
+        /// Snippet ID
+        id: i64,
+    },
+
     /// Generate shell completion (add `eval "$(snip complete zsh)"` to .zshrc)
     Complete { shell: clap_complete::Shell },
 }
@@ -359,6 +371,9 @@ async fn main() -> anyhow::Result<()> {
                     "Author: {}",
                     snippet["author"].as_str().unwrap_or("unknown")
                 );
+                let views = snippet["views"].as_i64().unwrap_or(0);
+                let stars = snippet["stars"].as_i64().unwrap_or(0);
+                println!("Views: {} | Stars: {}", views, stars);
                 println!("View: {}/s/{}", server, id);
                 println!("Raw: {}/raw/{}", server, id);
                 println!("---");
@@ -399,6 +414,8 @@ async fn main() -> anyhow::Result<()> {
                             println!("\n---\n");
                         }
                         let id = s["id"].as_i64().unwrap_or(0);
+                        let views = s["views"].as_i64().unwrap_or(0);
+                        let stars = s["stars"].as_i64().unwrap_or(0);
                         println!("ID: {} | {}/s/{}", id, server, id);
                         if let Some(desc) = s["description"].as_str() {
                             println!("Desc: {}", desc);
@@ -409,6 +426,7 @@ async fn main() -> anyhow::Result<()> {
                             println!("Lang: {}", lang);
                         }
                         println!("Author: {}", s["author"].as_str().unwrap_or("unknown"));
+                        println!("Views: {} | Stars: {}", views, stars);
                         let preview: String = s["content"]
                             .as_str()
                             .unwrap_or("")
@@ -451,6 +469,54 @@ async fn main() -> anyhow::Result<()> {
                 std::process::exit(1);
             } else if response.status() == 403 {
                 eprintln!("Not authorized to delete snippet {}", id);
+                std::process::exit(1);
+            } else {
+                eprintln!("Error: {}", response.status());
+                std::process::exit(1);
+            }
+            Ok(())
+        }
+
+        Command::Star { id } => {
+            let response = client
+                .post(format!("{}/api/snippets/{}/star", server, id))
+                .header("X-API-Key", api_key)
+                .send()
+                .await?;
+
+            if response.status().is_success() {
+                let result: serde_json::Value = response.json().await?;
+                let total = result["total_stars"].as_i64().unwrap_or(0);
+                println!("Starred snippet {}. Total stars: {}", id, total);
+            } else if response.status() == 404 {
+                eprintln!("Snippet {} not found", id);
+                std::process::exit(1);
+            } else if response.status() == 401 {
+                eprintln!("Unauthorized. Please login first.");
+                std::process::exit(1);
+            } else {
+                eprintln!("Error: {}", response.status());
+                std::process::exit(1);
+            }
+            Ok(())
+        }
+
+        Command::Unstar { id } => {
+            let response = client
+                .delete(format!("{}/api/snippets/{}/star", server, id))
+                .header("X-API-Key", api_key)
+                .send()
+                .await?;
+
+            if response.status().is_success() {
+                let result: serde_json::Value = response.json().await?;
+                let total = result["total_stars"].as_i64().unwrap_or(0);
+                println!("Unstarred snippet {}. Total stars: {}", id, total);
+            } else if response.status() == 404 {
+                eprintln!("Snippet {} not found", id);
+                std::process::exit(1);
+            } else if response.status() == 401 {
+                eprintln!("Unauthorized. Please login first.");
                 std::process::exit(1);
             } else {
                 eprintln!("Error: {}", response.status());

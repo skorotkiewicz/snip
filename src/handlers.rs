@@ -181,7 +181,9 @@ pub async fn list_snippets(
             s.description,
             s.language,
             s.created_at,
-            u.username as author
+            s.views,
+            u.username as author,
+            (SELECT COUNT(*) FROM stars WHERE snippet_id = s.id) as stars
         FROM snippets s
         JOIN users u ON s.user_id = u.id
         ORDER BY s.created_at DESC
@@ -243,7 +245,9 @@ pub async fn list_user_snippets(
             s.description,
             s.language,
             s.created_at,
-            u.username as author
+            s.views,
+            u.username as author,
+            (SELECT COUNT(*) FROM stars WHERE snippet_id = s.id) as stars
         FROM snippets s
         JOIN users u ON s.user_id = u.id
         WHERE u.username = ?1
@@ -277,6 +281,18 @@ pub async fn get_snippet(
 ) -> Result<Json<SnippetWithAuthor>, (StatusCode, String)> {
     let pool = state.db.pool();
 
+    // Increment views
+    sqlx::query("UPDATE snippets SET views = views + 1 WHERE id = ?1")
+        .bind(id)
+        .execute(pool)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Database error: {}", e),
+            )
+        })?;
+
     let snippet: Option<SnippetWithAuthor> = sqlx::query_as(
         r#"
         SELECT
@@ -285,7 +301,9 @@ pub async fn get_snippet(
             s.description,
             s.language,
             s.created_at,
-            u.username as author
+            s.views,
+            u.username as author,
+            (SELECT COUNT(*) FROM stars WHERE snippet_id = s.id) as stars
         FROM snippets s
         JOIN users u ON s.user_id = u.id
         WHERE s.id = ?1
@@ -406,7 +424,9 @@ pub async fn search_snippets(
             s.description,
             s.language,
             s.created_at,
-            u.username as author
+            s.views,
+            u.username as author,
+            (SELECT COUNT(*) FROM stars WHERE snippet_id = s.id) as stars
         FROM snippets s
         JOIN users u ON s.user_id = u.id
         {}
@@ -607,4 +627,192 @@ pub async fn delete_snippet(
         })?;
 
     Ok(StatusCode::NO_CONTENT)
+}
+
+pub async fn star_snippet(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    axum::extract::Path(id): axum::extract::Path<i64>,
+) -> Result<Json<StarResponse>, (StatusCode, String)> {
+    let pool = state.db.pool();
+
+    let api_key = headers
+        .get("x-api-key")
+        .and_then(|v| v.to_str().ok())
+        .ok_or((
+            StatusCode::UNAUTHORIZED,
+            "Missing X-API-Key header".to_string(),
+        ))?;
+
+    let user: Option<(i64,)> = sqlx::query_as("SELECT id FROM users WHERE api_key = ?1")
+        .bind(api_key)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Database error: {}", e),
+            )
+        })?;
+
+    let (user_id,) = user.ok_or((StatusCode::UNAUTHORIZED, "Invalid API key".to_string()))?;
+
+    // Check if snippet exists
+    let snippet_exists: Option<(i64,)> = sqlx::query_as("SELECT id FROM snippets WHERE id = ?1")
+        .bind(id)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Database error: {}", e),
+            )
+        })?;
+
+    snippet_exists.ok_or((StatusCode::NOT_FOUND, "Snippet not found".to_string()))?;
+
+    // Add star
+    let result = sqlx::query(
+        "INSERT INTO stars (user_id, snippet_id) VALUES (?1, ?2) ON CONFLICT DO NOTHING",
+    )
+    .bind(user_id)
+    .bind(id)
+    .execute(pool)
+    .await;
+
+    let _was_added = match result {
+        Ok(res) => res.rows_affected() > 0,
+        Err(e) => {
+            return Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Database error: {}", e),
+            ));
+        }
+    };
+
+    // Get total stars
+    let total_stars: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM stars WHERE snippet_id = ?1")
+        .bind(id)
+        .fetch_one(pool)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Database error: {}", e),
+            )
+        })?;
+
+    Ok(Json(StarResponse {
+        snippet_id: id,
+        starred: true,
+        total_stars,
+    }))
+}
+
+pub async fn unstar_snippet(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    axum::extract::Path(id): axum::extract::Path<i64>,
+) -> Result<Json<StarResponse>, (StatusCode, String)> {
+    let pool = state.db.pool();
+
+    let api_key = headers
+        .get("x-api-key")
+        .and_then(|v| v.to_str().ok())
+        .ok_or((
+            StatusCode::UNAUTHORIZED,
+            "Missing X-API-Key header".to_string(),
+        ))?;
+
+    let user: Option<(i64,)> = sqlx::query_as("SELECT id FROM users WHERE api_key = ?1")
+        .bind(api_key)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Database error: {}", e),
+            )
+        })?;
+
+    let (user_id,) = user.ok_or((StatusCode::UNAUTHORIZED, "Invalid API key".to_string()))?;
+
+    // Remove star
+    sqlx::query("DELETE FROM stars WHERE user_id = ?1 AND snippet_id = ?2")
+        .bind(user_id)
+        .bind(id)
+        .execute(pool)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Database error: {}", e),
+            )
+        })?;
+
+    // Get total stars
+    let total_stars: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM stars WHERE snippet_id = ?1")
+        .bind(id)
+        .fetch_one(pool)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Database error: {}", e),
+            )
+        })?;
+
+    Ok(Json(StarResponse {
+        snippet_id: id,
+        starred: false,
+        total_stars,
+    }))
+}
+
+pub async fn get_star_status(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    axum::extract::Path(id): axum::extract::Path<i64>,
+) -> Result<Json<StarStatusResponse>, (StatusCode, String)> {
+    let pool = state.db.pool();
+
+    let api_key_opt = headers.get("x-api-key").and_then(|v| v.to_str().ok());
+
+    let mut user_starred = false;
+
+    // Check if user has starred (if API key provided)
+    if let Some(api_key) = api_key_opt {
+        let starred: Option<(i64,)> = sqlx::query_as(
+            "SELECT 1 FROM stars s JOIN users u ON s.user_id = u.id WHERE u.api_key = ?1 AND s.snippet_id = ?2"
+        )
+        .bind(api_key)
+        .bind(id)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Database error: {}", e),
+            )
+        })?;
+        user_starred = starred.is_some();
+    }
+
+    // Get total stars
+    let total_stars: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM stars WHERE snippet_id = ?1")
+        .bind(id)
+        .fetch_one(pool)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Database error: {}", e),
+            )
+        })?;
+
+    Ok(Json(StarStatusResponse {
+        snippet_id: id,
+        starred: user_starred,
+        total_stars,
+    }))
 }

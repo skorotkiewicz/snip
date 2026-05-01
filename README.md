@@ -2,7 +2,7 @@
 
 A minimal, self-hosted snippet sharing service. Share code snippets via web UI, CLI, or API.
 
-![Demo](https://raw.githubusercontent.com/skorotkiewicz/snip/main/demo.png)
+<!--![Demo](demo.png)-->
 
 ## Features
 

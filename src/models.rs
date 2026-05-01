@@ -52,6 +52,7 @@ pub struct Snippet {
     pub content: String,
     pub description: Option<String>,
     pub created_at: DateTime<Utc>,
+    pub views: i64,
 }
 
 #[derive(Debug, Serialize, sqlx::FromRow)]
@@ -62,6 +63,8 @@ pub struct SnippetWithAuthor {
     pub language: Option<String>,
     pub created_at: DateTime<Utc>,
     pub author: String,
+    pub views: i64,
+    pub stars: i64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -156,4 +159,18 @@ pub struct ListSnippetsResponse {
     pub total: i64,
     pub page: i64,
     pub limit: i64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct StarResponse {
+    pub snippet_id: i64,
+    pub starred: bool,
+    pub total_stars: i64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct StarStatusResponse {
+    pub snippet_id: i64,
+    pub starred: bool,
+    pub total_stars: i64,
 }

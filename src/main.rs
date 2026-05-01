@@ -3,7 +3,8 @@ use axum::{
     response::Html,
     routing::{delete, get, post},
 };
-use sqlx::sqlite::SqlitePoolOptions;
+use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
+use std::str::FromStr;
 use tower_http::cors::CorsLayer;
 use tracing_subscriber::fmt;
 
@@ -35,13 +36,28 @@ async fn main() -> anyhow::Result<()> {
     let database_url =
         std::env::var("DATABASE_URL").unwrap_or_else(|_| "sqlite:snip.db".to_string());
 
+    // Parse connection options
+    let opts = SqliteConnectOptions::from_str(&database_url)?;
+
+    // Ensure database directory and file exist
+    let filename = opts.get_filename();
+    if let Some(parent) = filename.parent()
+        && !parent.as_os_str().is_empty()
+    {
+        std::fs::create_dir_all(parent)?;
+    }
+    // Create the file if it doesn't exist (SQLite needs this in some environments)
+    if !filename.exists() {
+        std::fs::File::create(filename)?;
+    }
+
     let host = std::env::var("SNIP_HOST").unwrap_or_else(|_| "0.0.0.0".to_string());
     let port = std::env::var("SNIP_PORT").unwrap_or_else(|_| "3000".to_string());
     let bind_addr = format!("{}:{}", host, port);
 
     let pool = SqlitePoolOptions::new()
         .max_connections(5)
-        .connect(&database_url)
+        .connect_with(opts)
         .await?;
 
     sqlx::migrate!("./migrations").run(&pool).await?;
@@ -62,6 +78,9 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/snippets", get(list_snippets))
         .route("/api/snippets/{id}", get(get_snippet))
         .route("/api/snippets/{id}", delete(delete_snippet))
+        .route("/api/snippets/{id}/star", post(star_snippet))
+        .route("/api/snippets/{id}/star", delete(unstar_snippet))
+        .route("/api/snippets/{id}/star", get(get_star_status))
         .route("/api/search", get(search_snippets))
         .route("/api/users/{username}/snippets", get(list_user_snippets))
         .layer(CorsLayer::permissive())
@@ -277,6 +296,33 @@ const INDEX_HTML: &str = r##"
             color: #f00;
             text-decoration: underline;
         }
+        .star-btn {
+            font-family: inherit;
+            font-size: 0.875rem;
+            background: #fff;
+            border: 1px solid #ccc;
+            color: #666;
+            cursor: pointer;
+            padding: 0.1rem 0.4rem;
+            margin-left: 0.5rem;
+            border-radius: 3px;
+            transition: all 0.2s;
+        }
+        .star-btn:hover {
+            background: #f5f5f5;
+            border-color: #999;
+            color: #333;
+        }
+        .star-btn.starred {
+            background: #fff8e1;
+            border-color: #ffc107;
+            color: #ff8f00;
+        }
+        .star-count {
+            font-size: 0.875rem;
+            color: #666;
+            margin-left: 0.5rem;
+        }
         .pagination {
             display: flex;
             justify-content: center;
@@ -472,6 +518,24 @@ const INDEX_HTML: &str = r##"
                     document.getElementById('search-box').style.display = 'none';
                     document.getElementById('auth-box').style.display = 'none';
                     document.getElementById('pagination').style.display = 'none';
+
+                    // Load star status for single snippet
+                    const apiKey = localStorage.getItem('snip_api_key');
+                    if (apiKey) {
+                        try {
+                            const starResp = await fetch(`/api/snippets/${snippet.id}/star`, {
+                                headers: { 'X-API-Key': apiKey }
+                            });
+                            if (starResp.ok) {
+                                const starData = await starResp.json();
+                                snippet.starred = starData.starred;
+                                snippet.stars = starData.total_stars;
+                            }
+                        } catch (e) {
+                            // Ignore errors
+                        }
+                    }
+
                     renderSnippets([snippet]);
                 } else if (response.status === 404) {
                     document.getElementById('snippets').innerHTML = '<div class="empty">Snippet not found</div>';
@@ -509,6 +573,25 @@ const INDEX_HTML: &str = r##"
                 const data = await response.json();
 
                 totalPages = Math.ceil(data.total / ITEMS_PER_PAGE) || 1;
+
+                // Load star status for each snippet if user is logged in
+                const apiKey = localStorage.getItem('snip_api_key');
+                if (apiKey && data.snippets) {
+                    await Promise.all(data.snippets.map(async (s) => {
+                        try {
+                            const starResp = await fetch(`/api/snippets/${s.id}/star`, {
+                                headers: { 'X-API-Key': apiKey }
+                            });
+                            if (starResp.ok) {
+                                const starData = await starResp.json();
+                                s.starred = starData.starred;
+                                s.stars = starData.total_stars;
+                            }
+                        } catch (e) {
+                            // Ignore errors
+                        }
+                    }));
+                }
 
                 renderSnippets(data.snippets);
                 renderPagination();
@@ -566,14 +649,19 @@ const INDEX_HTML: &str = r##"
                 const descHtml = s.description ? `<div class="snippet-desc">${escapeHtml(s.description)}${langTag}</div>` : langTag ? `<div class="snippet-desc">${langTag}</div>` : '';
                 const isOwner = apiKey && s.author === currentUser;
                 const deleteBtn = isOwner ? ` <button class="delete-btn" onclick="deleteSnippet(${s.id})">[x]</button>` : '';
+                const starCount = s.stars || 0;
+                const starBtn = apiKey
+                    ? ` <button class="star-btn ${s.starred ? 'starred' : ''}" onclick="toggleStar(${s.id}, this)" title="${s.starred ? 'Unstar' : 'Star'}">${s.starred ? '★' : '☆'} ${starCount}</button>`
+                    : ` <span class="star-count">☆ ${starCount}</span>`;
                 const langClass = s.language && s.language !== 'plaintext' ? ` class="language-${s.language}"` : '';
+                const views = s.views || 0;
                 return `
                 <div class="snippet" id="snippet-${s.id}">
                     ${descHtml}
                     <div class="snippet-content">
                         <pre><code${langClass}>${escapeHtml(s.content)}</code></pre>
                     </div>
-                    <div class="snippet-meta">${authorLink} · <a href="/s/${s.id}">${formatDate(s.created_at)}</a> · <a href="/raw/${s.id}" style="font-size: 0.75rem; color: #999;">raw</a>${deleteBtn}</div>
+                    <div class="snippet-meta">${authorLink} · <a href="/s/${s.id}">${formatDate(s.created_at)}</a> · ${views} views${starBtn} · <a href="/raw/${s.id}" style="font-size: 0.75rem; color: #999;">raw</a>${deleteBtn}</div>
                 </div>
             `}).join('');
 
@@ -607,6 +695,42 @@ const INDEX_HTML: &str = r##"
                 }
             } catch (e) {
                 alert('Error deleting snippet');
+            }
+        }
+
+        async function toggleStar(id, btn) {
+            const apiKey = localStorage.getItem('snip_api_key');
+            if (!apiKey) {
+                alert('Please login to star snippets');
+                return;
+            }
+
+            const isStarred = btn.classList.contains('starred');
+            const method = isStarred ? 'DELETE' : 'POST';
+
+            try {
+                const response = await fetch(`/api/snippets/${id}/star`, {
+                    method: method,
+                    headers: { 'X-API-Key': apiKey }
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    const count = data.total_stars || 0;
+                    btn.textContent = data.starred ? `★ ${count}` : `☆ ${count}`;
+                    btn.title = data.starred ? 'Unstar' : 'Star';
+                    if (data.starred) {
+                        btn.classList.add('starred');
+                    } else {
+                        btn.classList.remove('starred');
+                    }
+                } else if (response.status === 401) {
+                    alert('Session expired. Please login again.');
+                } else {
+                    alert('Failed to update star');
+                }
+            } catch (e) {
+                alert('Error starring snippet');
             }
         }
 
