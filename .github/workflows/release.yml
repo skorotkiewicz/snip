@@ -30,11 +30,22 @@ jobs:
           targets: ${{ matrix.target }}
 
       - if: matrix.target == 'aarch64-unknown-linux-gnu'
-        run: sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+          # Download and cross-compile OpenSSL for aarch64
+          wget https://www.openssl.org/source/openssl-3.3.0.tar.gz
+          tar xzf openssl-3.3.0.tar.gz
+          cd openssl-3.3.0
+          ./Configure linux-aarch64 --prefix=/opt/openssl-aarch64 --cross-compile-prefix=aarch64-linux-gnu- no-shared
+          make -j$(nproc)
+          sudo make install
+          cd ..
 
       - run: cargo build --release --locked --target ${{ matrix.target }}
         env:
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+          OPENSSL_DIR: /opt/openssl-aarch64
 
       - name: Package (Unix)
         if: matrix.os != 'windows-latest'
