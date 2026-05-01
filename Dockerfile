@@ -21,7 +21,6 @@ WORKDIR /app
 COPY --from=builder /app/target/release/snipped /app/snipped
 COPY --from=builder /app/target/release/snip /app/snip
 COPY --from=builder /app/migrations ./migrations
-COPY --from=builder /app/src/index.html ./src/index.html
 
 # Create data directory for SQLite
 RUN mkdir -p /data

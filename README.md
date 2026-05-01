@@ -25,7 +25,10 @@ sudo systemctl enable --now snip
 
 **Docker**:
 ```bash
-# Build and run
+# Run pre-built image from GitHub Container Registry
+# docker run -d -p 3000:3000 -v snip_data:/data ghcr.io/skorotkiewicz/snip:latest (not yet)
+
+# Or build locally
 docker build -t snip .
 docker run -d -p 3000:3000 -v snip_data:/data snip
 
