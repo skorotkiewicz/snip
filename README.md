@@ -9,7 +9,7 @@ A minimal snippet sharing service with API, CLI, and web frontend.
 cargo build --release
 
 # Run server
-./target/release/snip
+./target/release/snipped
 
 # Open http://localhost:3000
 ```
@@ -33,7 +33,7 @@ Response:
 
 ```bash
 # Using CLI
-echo "Hello World" | ./target/release/snipped --desc "greeting" --api-key YOUR_API_KEY
+echo "Hello World" | ./target/release/snip --desc "greeting" --api-key YOUR_API_KEY
 
 # Or with curl
 curl -X POST http://localhost:3000/api/snippets \
@@ -41,6 +41,8 @@ curl -X POST http://localhost:3000/api/snippets \
   -H "Content-Type: application/json" \
   -d '{"content": "Hello World", "description": "greeting"}'
 ```
+
+**Limits:** Content max 5000 chars, Description max 255 chars.
 
 ### View Snippets
 
@@ -78,7 +80,7 @@ curl http://localhost:3000/api/users/alice/snippets?page=1&limit=10
 
 - **Backend**: Axum (Rust) + SQLite
 - **Frontend**: Vanilla HTML/JS (embedded in binary)
-- **CLI**: Separate binary `snipped`
+- **CLI**: Separate binary `snip`
 
 Data persists in `snip.db` (SQLite).
 
@@ -86,8 +88,8 @@ Data persists in `snip.db` (SQLite).
 
 ```bash
 # Custom database path
-DATABASE_URL=sqlite:/path/to/snip.db ./target/release/snip
+DATABASE_URL=sqlite:/path/to/snip.db ./target/release/snipped
 
 # CLI server URL
-SNIP_API_KEY=xxx ./target/release/snipped --server http://localhost:3000
+SNIP_API_KEY=xxx ./target/release/snip --server http://localhost:3000
 ```

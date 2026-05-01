@@ -103,6 +103,20 @@ pub async fn create_snippet(
         ));
     }
 
+    if req.content.len() > 5000 {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Content exceeds maximum length of 5000 characters".to_string(),
+        ));
+    }
+
+    if req.description.as_ref().map(|d| d.len()).unwrap_or(0) > 255 {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Description exceeds maximum length of 255 characters".to_string(),
+        ));
+    }
+
     let result: Result<(i64, chrono::DateTime<chrono::Utc>), sqlx::Error> = sqlx::query_as(
         r#"
         INSERT INTO snippets (user_id, content, description)

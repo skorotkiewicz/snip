@@ -2,8 +2,8 @@ use clap::Parser;
 use std::io::{self, Read};
 
 #[derive(Parser)]
-#[command(name = "snipped")]
-#[command(about = "CLI tool for posting snippets to snip server")]
+#[command(name = "snip")]
+#[command(about = "CLI tool for posting snippets to snipped server")]
 struct Args {
     #[arg(short, long, help = "Description of the snippet")]
     desc: Option<String>,
@@ -34,9 +34,9 @@ async fn main() -> anyhow::Result<()> {
     io::stdin().read_to_string(&mut content)?;
 
     if content.trim().is_empty() {
-        eprintln!("Error: No content provided. Pipe content to snipped, e.g.:");
-        eprintln!("  cat file.txt | snipped --desc 'my file'");
-        eprintln!("  echo 'hello' | snipped --desc 'greeting'");
+        eprintln!("Error: No content provided. Pipe content to snip, e.g.:");
+        eprintln!("  cat file.txt | snip --desc 'my file'");
+        eprintln!("  echo 'hello' | snip --desc 'greeting'");
         std::process::exit(1);
     }
 

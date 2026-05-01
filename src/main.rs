@@ -102,36 +102,20 @@ const INDEX_HTML: &str = r#"
             padding: 0.1rem 0.3rem;
         }
         .snippet {
-            background: #fff;
-            border: 1px solid #ccc;
-            margin-bottom: 1rem;
-        }
-        .snippet-header {
-            border-bottom: 1px solid #ccc;
-            padding: 0.5rem 1rem;
-            background: #fafafa;
-            display: flex;
-            justify-content: space-between;
-            font-size: 0.875rem;
+            margin-bottom: 2rem;
         }
         .snippet-desc {
+            font-size: 1rem;
             font-weight: bold;
-        }
-        .snippet-meta {
-            color: #666;
-        }
-        .snippet-meta a {
             color: #333;
-            text-decoration: none;
-        }
-        .snippet-meta a:hover {
-            text-decoration: underline;
+            margin-bottom: 0.5rem;
+            padding: 0.25rem 0;
         }
         .snippet-content {
-            background: #f0f0f0;
-            border-left: 3px solid #666;
-            margin: 0.5rem 1rem 1rem 1rem;
-            padding: 0.75rem;
+            background: #fff;
+            border: 1px solid #333;
+            padding: 1rem;
+            margin-bottom: 0.5rem;
         }
         .snippet-content pre {
             margin: 0;
@@ -140,6 +124,19 @@ const INDEX_HTML: &str = r#"
             word-break: break-word;
             overflow-x: auto;
             color: #222;
+            line-height: 1.5;
+        }
+        .snippet-meta {
+            font-size: 0.875rem;
+            color: #666;
+            text-align: right;
+        }
+        .snippet-meta a {
+            color: #333;
+            text-decoration: none;
+        }
+        .snippet-meta a:hover {
+            text-decoration: underline;
         }
         .pagination {
             display: flex;
@@ -177,7 +174,7 @@ const INDEX_HTML: &str = r#"
         <h1><a href="/">snip</a><span id="header-suffix"> ~ code snippets</span></h1>
         
         <div class="help" id="help-box">
-            <p>$ echo "text" | snipped --desc "note"</p>
+            <p>$ echo "text" | snip --desc "note"</p>
             <p style="margin-top: 0.5rem; color: #666;"># POST /api/register {username, password} to get API key</p>
         </div>
         
@@ -226,18 +223,17 @@ const INDEX_HTML: &str = r#"
             }
             
             container.innerHTML = snippets.map(s => {
-                const authorLink = profileUser 
+                const authorLink = profileUser
                     ? escapeHtml(s.author)
                     : `<a href="/u/${escapeHtml(s.author)}">${escapeHtml(s.author)}</a>`;
+                const descHtml = s.description ? `<div class="snippet-desc">${escapeHtml(s.description)}</div>` : '';
                 return `
                 <div class="snippet">
-                    <div class="snippet-header">
-                        <span class="snippet-desc">${escapeHtml(s.description || 'Untitled')}</span>
-                        <span class="snippet-meta">${authorLink} · ${formatDate(s.created_at)}</span>
-                    </div>
+                    ${descHtml}
                     <div class="snippet-content">
                         <pre>${escapeHtml(s.content)}</pre>
                     </div>
+                    <div class="snippet-meta">${authorLink} · ${formatDate(s.created_at)}</div>
                 </div>
             `}).join('');
         }
