@@ -101,6 +101,24 @@ curl "http://localhost:3000/api/search?q=function&lang=javascript&page=1&limit=1
 
 Web UI has a search box with language filter dropdown.
 
+### View Single Snippet
+
+View a specific snippet by ID:
+
+```
+http://localhost:3000/s/123
+```
+
+API:
+```bash
+curl http://localhost:3000/api/snippets/123
+```
+
+Response:
+```json
+{"id": 123, "content": "...", "description": "...", "language": "rust", "created_at": "...", "author": "alice"}
+```
+
 ### User Profiles
 
 Click any username to view their profile, or visit directly:
@@ -122,11 +140,13 @@ curl http://localhost:3000/api/users/alice/snippets?page=1&limit=10
 | POST | `/api/login` | - | Login with password, returns API key |
 | POST | `/api/revoke-key` | API Key | Revoke old key, generate new API key |
 | POST | `/api/snippets` | API Key | Create snippet |
+| GET | `/api/snippets/{id}` | - | Get single snippet by ID |
 | DELETE | `/api/snippets/{id}` | API Key | Delete your own snippet |
 | GET | `/api/snippets` | - | List all snippets |
 | GET | `/api/search` | - | Search snippets by content/description/language |
 | GET | `/api/users/{username}/snippets` | - | List user snippets |
 | GET | `/` | - | Web frontend |
+| GET | `/s/{id}` | - | View single snippet page |
 | GET | `/u/{username}` | - | User profile page |
 
 ## Architecture

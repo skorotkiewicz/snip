@@ -40,11 +40,13 @@ async fn main() -> anyhow::Result<()> {
     let app = Router::new()
         .route("/", get(serve_index))
         .route("/u/{username}", get(serve_index))
+        .route("/s/{id}", get(serve_index))
         .route("/api/register", post(register_user))
         .route("/api/login", post(login))
         .route("/api/revoke-key", post(revoke_api_key))
         .route("/api/snippets", post(create_snippet))
         .route("/api/snippets", get(list_snippets))
+        .route("/api/snippets/{id}", get(get_snippet))
         .route("/api/snippets/{id}", delete(delete_snippet))
         .route("/api/search", get(search_snippets))
         .route("/api/users/{username}/snippets", get(list_user_snippets))
@@ -421,15 +423,42 @@ const INDEX_HTML: &str = r##"
         let searchQuery = '';
         let searchLang = 'all';
         
-        // Parse URL to determine if we're viewing a user profile
+        // Parse URL to determine view mode
         const pathParts = window.location.pathname.split('/');
         const profileUser = pathParts[1] === 'u' ? pathParts[2] : null;
+        const singleSnippetId = pathParts[1] === 's' ? pathParts[2] : null;
+
+        async function loadSingleSnippet() {
+            if (!singleSnippetId) return;
+            
+            try {
+                const response = await fetch(`/api/snippets/${singleSnippetId}`);
+                if (response.ok) {
+                    const snippet = await response.json();
+                    document.getElementById('header-suffix').textContent = ` ~ snippet #${snippet.id}`;
+                    document.getElementById('help-box').style.display = 'none';
+                    document.getElementById('search-box').style.display = 'none';
+                    document.getElementById('auth-box').style.display = 'none';
+                    document.getElementById('pagination').style.display = 'none';
+                    renderSnippets([snippet]);
+                } else if (response.status === 404) {
+                    document.getElementById('snippets').innerHTML = '<div class="empty">Snippet not found</div>';
+                } else {
+                    document.getElementById('snippets').innerHTML = '<div class="empty">Error loading snippet</div>';
+                }
+            } catch (error) {
+                document.getElementById('snippets').innerHTML = '<div class="empty">Error loading snippet</div>';
+            }
+        }
 
         async function loadSnippets(page = 1) {
             currentPage = page;
             let url;
             
-            if (searchQuery || (searchLang && searchLang !== 'all')) {
+            if (singleSnippetId) {
+                // Single snippet view - handled separately
+                return;
+            } else if (searchQuery || (searchLang && searchLang !== 'all')) {
                 // Use search endpoint
                 const params = new URLSearchParams();
                 params.append('page', page);
@@ -512,7 +541,7 @@ const INDEX_HTML: &str = r##"
                     <div class="snippet-content">
                         <pre><code${langClass}>${escapeHtml(s.content)}</code></pre>
                     </div>
-                    <div class="snippet-meta">${authorLink} · ${formatDate(s.created_at)}${deleteBtn}</div>
+                    <div class="snippet-meta">${authorLink} · <a href="/s/${s.id}">${formatDate(s.created_at)}</a>${deleteBtn}</div>
                 </div>
             `}).join('');
             
@@ -674,7 +703,12 @@ const INDEX_HTML: &str = r##"
             showApiKey(savedKey);
         }
 
-        loadSnippets();
+        // Load appropriate view
+        if (singleSnippetId) {
+            loadSingleSnippet();
+        } else {
+            loadSnippets();
+        }
     </script>
 </body>
 </html>

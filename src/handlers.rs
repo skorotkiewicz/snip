@@ -271,6 +271,42 @@ pub async fn list_user_snippets(
     }))
 }
 
+pub async fn get_snippet(
+    State(state): State<AppState>,
+    axum::extract::Path(id): axum::extract::Path<i64>,
+) -> Result<Json<SnippetWithAuthor>, (StatusCode, String)> {
+    let pool = state.db.pool();
+
+    let snippet: Option<SnippetWithAuthor> = sqlx::query_as(
+        r#"
+        SELECT 
+            s.id,
+            s.content,
+            s.description,
+            s.language,
+            s.created_at,
+            u.username as author
+        FROM snippets s
+        JOIN users u ON s.user_id = u.id
+        WHERE s.id = ?1
+        "#,
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await
+    .map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Database error: {}", e),
+        )
+    })?;
+
+    match snippet {
+        Some(s) => Ok(Json(s)),
+        None => Err((StatusCode::NOT_FOUND, "Snippet not found".to_string())),
+    }
+}
+
 pub async fn search_snippets(
     State(state): State<AppState>,
     Query(query): Query<SearchQuery>,
