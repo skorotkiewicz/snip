@@ -51,8 +51,8 @@ snip register myusername
 # Or login to existing account
 snip login myusername
 
-# Or login on demo server
-snip --server https://pb.sekor.eu.org login myusername
+# Or register on demo server
+snip --server https://pb.sekor.eu.org register myusername
 ```
 
 Credentials are saved to `~/.config/snip/config.json`.
