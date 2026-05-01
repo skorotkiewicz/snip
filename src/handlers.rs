@@ -307,6 +307,41 @@ pub async fn get_snippet(
     }
 }
 
+pub async fn get_raw_snippet(
+    State(state): State<AppState>,
+    axum::extract::Path(id): axum::extract::Path<i64>,
+) -> Result<axum::response::Response, (StatusCode, String)> {
+    let pool = state.db.pool();
+
+    let content: Option<(String,)> = sqlx::query_as("SELECT content FROM snippets WHERE id = ?1")
+        .bind(id)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Database error: {}", e),
+            )
+        })?;
+
+    match content {
+        Some((content,)) => {
+            let response = axum::response::Response::builder()
+                .status(StatusCode::OK)
+                .header("Content-Type", "text/plain; charset=utf-8")
+                .body(axum::body::Body::from(content))
+                .map_err(|e| {
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        format!("Response error: {}", e),
+                    )
+                })?;
+            Ok(response)
+        }
+        None => Err((StatusCode::NOT_FOUND, "Snippet not found".to_string())),
+    }
+}
+
 pub async fn search_snippets(
     State(state): State<AppState>,
     Query(query): Query<SearchQuery>,

@@ -41,6 +41,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/", get(serve_index))
         .route("/u/{username}", get(serve_index))
         .route("/s/{id}", get(serve_index))
+        .route("/raw/{id}", get(get_raw_snippet))
         .route("/api/register", post(register_user))
         .route("/api/login", post(login))
         .route("/api/revoke-key", post(revoke_api_key))
@@ -559,7 +560,7 @@ const INDEX_HTML: &str = r##"
                     <div class="snippet-content">
                         <pre><code${langClass}>${escapeHtml(s.content)}</code></pre>
                     </div>
-                    <div class="snippet-meta">${authorLink} · <a href="/s/${s.id}">${formatDate(s.created_at)}</a>${deleteBtn}</div>
+                    <div class="snippet-meta">${authorLink} · <a href="/s/${s.id}">${formatDate(s.created_at)}</a> · <a href="/raw/${s.id}" style="font-size: 0.75rem; color: #999;">raw</a>${deleteBtn}</div>
                 </div>
             `}).join('');
 

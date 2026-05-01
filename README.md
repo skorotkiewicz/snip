@@ -133,6 +133,19 @@ Response:
 {"id": 123, "content": "...", "description": "...", "language": "rust", "created_at": "...", "author": "alice"}
 ```
 
+### Raw Snippet Content
+
+Get raw snippet content (useful for piping or embedding):
+
+```bash
+curl http://localhost:3000/raw/123
+```
+
+Returns the raw content as `text/plain`:
+```
+console.log("hello world");
+```
+
 ### User Profiles
 
 Click any username to view their profile, or visit directly:
@@ -161,6 +174,7 @@ curl http://localhost:3000/api/users/alice/snippets?page=1&limit=10
 | GET | `/api/users/{username}/snippets` | - | List user snippets |
 | GET | `/` | - | Web frontend |
 | GET | `/s/{id}` | - | View single snippet page |
+| GET | `/raw/{id}` | - | Get raw snippet content (plain text) |
 | GET | `/u/{username}` | - | User profile page |
 
 ## Architecture
