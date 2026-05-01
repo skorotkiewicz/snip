@@ -1,6 +1,6 @@
 [package]
 name = "snip"
-version = "0.1.9"
+version = "0.2.0"
 edition = "2024"
 
 [[bin]]
@@ -29,3 +29,4 @@ dirs = "5.0"
 anyhow = "1.0"
 tracing = "0.1"
 tracing-subscriber = "0.3"
+redis = { version = "0.27", features = ["tokio-comp"] }

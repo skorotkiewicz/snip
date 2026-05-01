@@ -14,6 +14,20 @@ pub async fn register_user(
 ) -> Result<Json<CreateUserResponse>, (StatusCode, String)> {
     let pool = state.db.pool();
 
+    // Rate limiting: 5 registrations per hour per IP
+    // Using username as identifier since we don't have direct IP access in this context
+    let allowed = state
+        .redis
+        .check_rate_limit("register", &req.username, 5, 3600)
+        .await;
+
+    if !allowed {
+        return Err((
+            StatusCode::TOO_MANY_REQUESTS,
+            "Rate limit exceeded: 5 registrations per hour".to_string(),
+        ));
+    }
+
     if req.username.len() < 3 || req.username.len() > 32 {
         return Err((
             StatusCode::BAD_REQUEST,
@@ -95,6 +109,19 @@ pub async fn create_snippet(
     let user_id = user_row
         .ok_or((StatusCode::UNAUTHORIZED, "Invalid API key".to_string()))?
         .0;
+
+    // Rate limiting: 10 snippets per minute per user
+    let allowed = state
+        .redis
+        .check_rate_limit("snippet_create", &user_id.to_string(), 10, 60)
+        .await;
+
+    if !allowed {
+        return Err((
+            StatusCode::TOO_MANY_REQUESTS,
+            "Rate limit exceeded: 10 snippets per minute".to_string(),
+        ));
+    }
 
     if req.content.is_empty() {
         return Err((
@@ -281,17 +308,24 @@ pub async fn get_snippet(
 ) -> Result<Json<SnippetWithAuthor>, (StatusCode, String)> {
     let pool = state.db.pool();
 
-    // Increment views
-    sqlx::query("UPDATE snippets SET views = views + 1 WHERE id = ?1")
-        .bind(id)
-        .execute(pool)
-        .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Database error: {}", e),
-            )
-        })?;
+    // Increment views using Redis if available, otherwise fallback to database
+    let redis_count = if state.redis.is_enabled() {
+        let key = format!("views:{}", id);
+        state.redis.incr(&key).await
+    } else {
+        // Fallback: increment directly in database
+        sqlx::query("UPDATE snippets SET views = views + 1 WHERE id = ?1")
+            .bind(id)
+            .execute(pool)
+            .await
+            .map_err(|e| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("Database error: {}", e),
+                )
+            })?;
+        None
+    };
 
     let snippet: Option<SnippetWithAuthor> = sqlx::query_as(
         r#"
@@ -320,7 +354,13 @@ pub async fn get_snippet(
     })?;
 
     match snippet {
-        Some(s) => Ok(Json(s)),
+        Some(mut s) => {
+            // If we have a Redis count, add it to the database count
+            if let Some(redis_views) = redis_count {
+                s.views += redis_views;
+            }
+            Ok(Json(s))
+        }
         None => Err((StatusCode::NOT_FOUND, "Snippet not found".to_string())),
     }
 }
@@ -331,17 +371,23 @@ pub async fn get_raw_snippet(
 ) -> Result<axum::response::Response, (StatusCode, String)> {
     let pool = state.db.pool();
 
-    // Increment views
-    sqlx::query("UPDATE snippets SET views = views + 1 WHERE id = ?1")
-        .bind(id)
-        .execute(pool)
-        .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Database error: {}", e),
-            )
-        })?;
+    // Increment views using Redis if available, otherwise fallback to database
+    if state.redis.is_enabled() {
+        let key = format!("views:{}", id);
+        let _: Option<i64> = state.redis.incr(&key).await;
+    } else {
+        // Fallback: increment directly in database
+        sqlx::query("UPDATE snippets SET views = views + 1 WHERE id = ?1")
+            .bind(id)
+            .execute(pool)
+            .await
+            .map_err(|e| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("Database error: {}", e),
+                )
+            })?;
+    }
 
     let content: Option<(String,)> = sqlx::query_as("SELECT content FROM snippets WHERE id = ?1")
         .bind(id)
@@ -477,6 +523,19 @@ pub async fn login(
     Json(req): Json<LoginRequest>,
 ) -> Result<Json<LoginResponse>, (StatusCode, String)> {
     let pool = state.db.pool();
+
+    // Rate limiting: 10 login attempts per minute per username
+    let allowed = state
+        .redis
+        .check_rate_limit("login", &req.username, 10, 60)
+        .await;
+
+    if !allowed {
+        return Err((
+            StatusCode::TOO_MANY_REQUESTS,
+            "Rate limit exceeded: 10 login attempts per minute".to_string(),
+        ));
+    }
 
     let user: Option<(String, String)> =
         sqlx::query_as("SELECT username, password_hash FROM users WHERE username = ?1")

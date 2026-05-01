@@ -5,19 +5,23 @@ use axum::{
 };
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use std::str::FromStr;
+use std::time::Duration;
 use tower_http::cors::CorsLayer;
 use tracing_subscriber::fmt;
 
 mod db;
 mod handlers;
 mod models;
+mod redis_cache;
 
 use db::Database;
 use handlers::*;
+use redis_cache::RedisCache;
 
 #[derive(Clone)]
 struct AppState {
     db: Database,
+    redis: RedisCache,
 }
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -62,9 +66,44 @@ async fn main() -> anyhow::Result<()> {
 
     sqlx::migrate!("./migrations").run(&pool).await?;
 
+    // Initialize Redis
+    let redis_url = std::env::var("REDIS_URL").ok();
+    let redis = RedisCache::new(redis_url).await;
+
     let state = AppState {
         db: Database::new(pool),
+        redis: redis.clone(),
     };
+
+    // Start background task to periodically flush view counters
+    if redis.is_enabled() {
+        let db_for_flush = state.db.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_secs(60));
+            loop {
+                interval.tick().await;
+                let counters = redis.flush_view_counters("views").await;
+                if !counters.is_empty() {
+                    tracing::info!("Flushing {} view counters to database", counters.len());
+                    for (snippet_id, count) in counters {
+                        if let Err(e) =
+                            sqlx::query("UPDATE snippets SET views = views + ?1 WHERE id = ?2")
+                                .bind(count)
+                                .bind(snippet_id)
+                                .execute(db_for_flush.pool())
+                                .await
+                        {
+                            tracing::error!(
+                                "Failed to update views for snippet {}: {}",
+                                snippet_id,
+                                e
+                            );
+                        }
+                    }
+                }
+            }
+        });
+    }
 
     let app = Router::new()
         .route("/", get(serve_index))

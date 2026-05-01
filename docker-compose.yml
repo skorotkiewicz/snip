@@ -1,9 +1,19 @@
 version: '3.8'
 
 services:
+  redis:
+    image: redis:7-alpine
+    container_name: snip-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+
   snip:
     build: .
     container_name: snip
+    image: snip
     ports:
       - "3000:3000"
     volumes:
@@ -11,8 +21,12 @@ services:
       - snip_data:/data
     environment:
       - DATABASE_URL=sqlite:/data/snip.db
+      - REDIS_URL=redis://snip-redis:6379
       - RUST_LOG=info
+    depends_on:
+      - redis
     restart: unless-stopped
 
 volumes:
   snip_data:
+  redis_data:
