@@ -8,6 +8,9 @@ struct Args {
     #[arg(short, long, help = "Description of the snippet")]
     desc: Option<String>,
 
+    #[arg(short, long, help = "Language of the snippet (e.g., javascript, rust)")]
+    lang: Option<String>,
+
     #[arg(short, long, help = "API key (or set SNIP_API_KEY env var)")]
     api_key: Option<String>,
 
@@ -35,7 +38,7 @@ async fn main() -> anyhow::Result<()> {
 
     if content.trim().is_empty() {
         eprintln!("Error: No content provided. Pipe content to snip, e.g.:");
-        eprintln!("  cat file.txt | snip --desc 'my file'");
+        eprintln!("  cat file.txt | snip --desc 'my file' --lang rust");
         eprintln!("  echo 'hello' | snip --desc 'greeting'");
         std::process::exit(1);
     }
@@ -48,7 +51,8 @@ async fn main() -> anyhow::Result<()> {
         .header("Content-Type", "application/json")
         .json(&serde_json::json!({
             "content": content,
-            "description": args.desc
+            "description": args.desc,
+            "language": args.lang
         }))
         .send()
         .await?;

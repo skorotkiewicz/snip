@@ -60,16 +60,16 @@ Response:
 
 ```bash
 # Using CLI
-echo "Hello World" | ./target/release/snip --desc "greeting" --api-key YOUR_API_KEY
+echo "Hello World" | ./target/release/snip --desc "greeting" --lang javascript --api-key YOUR_API_KEY
 
 # Or with curl
 curl -X POST http://localhost:3000/api/snippets \
   -H "X-API-Key: YOUR_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"content": "Hello World", "description": "greeting"}'
+  -d '{"content": "Hello World", "description": "greeting", "language": "javascript"}'
 ```
 
-**Limits:** Content max 5000 chars, Description max 255 chars.
+**Limits:** Content max 5000 chars, Description max 255 chars, Language optional.
 
 ### Delete Snippet
 

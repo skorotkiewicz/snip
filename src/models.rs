@@ -59,6 +59,7 @@ pub struct SnippetWithAuthor {
     pub id: i64,
     pub content: String,
     pub description: Option<String>,
+    pub language: Option<String>,
     pub created_at: DateTime<Utc>,
     pub author: String,
 }
@@ -67,6 +68,7 @@ pub struct SnippetWithAuthor {
 pub struct CreateSnippetRequest {
     pub content: String,
     pub description: Option<String>,
+    pub language: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -74,6 +76,7 @@ pub struct CreateSnippetResponse {
     pub id: i64,
     pub content: String,
     pub description: Option<String>,
+    pub language: Option<String>,
     pub created_at: DateTime<Utc>,
 }
 

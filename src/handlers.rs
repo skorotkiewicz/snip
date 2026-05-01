@@ -119,14 +119,15 @@ pub async fn create_snippet(
 
     let result: Result<(i64, chrono::DateTime<chrono::Utc>), sqlx::Error> = sqlx::query_as(
         r#"
-        INSERT INTO snippets (user_id, content, description)
-        VALUES (?1, ?2, ?3)
+        INSERT INTO snippets (user_id, content, description, language)
+        VALUES (?1, ?2, ?3, ?4)
         RETURNING id, created_at
         "#,
     )
     .bind(user_id)
     .bind(&req.content)
     .bind(&req.description)
+    .bind(&req.language)
     .fetch_one(pool)
     .await;
 
@@ -135,6 +136,7 @@ pub async fn create_snippet(
             id,
             content: req.content,
             description: req.description,
+            language: req.language,
             created_at,
         })),
         Err(e) => Err((
@@ -170,6 +172,7 @@ pub async fn list_snippets(
             s.id,
             s.content,
             s.description,
+            s.language,
             s.created_at,
             u.username as author
         FROM snippets s
@@ -231,6 +234,7 @@ pub async fn list_user_snippets(
             s.id,
             s.content,
             s.description,
+            s.language,
             s.created_at,
             u.username as author
         FROM snippets s

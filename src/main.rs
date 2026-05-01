@@ -184,6 +184,14 @@ const INDEX_HTML: &str = r#"
             margin-bottom: 0.5rem;
             padding: 0.25rem 0;
         }
+        .snippet-lang {
+            font-size: 0.75rem;
+            color: #666;
+            background: #eee;
+            padding: 0.1rem 0.4rem;
+            margin-left: 0.5rem;
+            text-transform: lowercase;
+        }
         .snippet-content {
             background: #fff;
             border: 1px solid #333;
@@ -261,7 +269,7 @@ const INDEX_HTML: &str = r#"
         <h1><a href="/">snip</a><span id="header-suffix"> ~ code snippets</span></h1>
         
         <div class="help" id="help-box">
-            <p>$ echo "text" | snip --desc "note"</p>
+            <p>$ echo "text" | snip --desc "note" --lang rust</p>
             <p style="margin-top: 0.5rem; color: #666;"># POST /api/register {username, password} to get API key</p>
         </div>
 
@@ -338,7 +346,8 @@ const INDEX_HTML: &str = r#"
                 const authorLink = profileUser
                     ? escapeHtml(s.author)
                     : `<a href="/u/${escapeHtml(s.author)}">${escapeHtml(s.author)}</a>`;
-                const descHtml = s.description ? `<div class="snippet-desc">${escapeHtml(s.description)}</div>` : '';
+                const langTag = s.language ? `<span class="snippet-lang">${escapeHtml(s.language)}</span>` : '';
+                const descHtml = s.description ? `<div class="snippet-desc">${escapeHtml(s.description)}${langTag}</div>` : langTag ? `<div class="snippet-desc">${langTag}</div>` : '';
                 const isOwner = apiKey && s.author === currentUser;
                 const deleteBtn = isOwner ? ` <button class="delete-btn" onclick="deleteSnippet(${s.id})">[x]</button>` : '';
                 return `
