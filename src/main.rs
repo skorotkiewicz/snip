@@ -134,12 +134,54 @@ const INDEX_HTML: &str = r##"
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/zig.min.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        /* Light mode (default) */
+        :root {
+            --bg-color: #f5f5f5;
+            --text-color: #333;
+            --container-bg: #fff;
+            --border-color: #ccc;
+            --border-strong: #333;
+            --code-bg: #eee;
+            --meta-color: #666;
+            --link-color: #333;
+            --accent-bg: #f5f5f5;
+            --star-btn-bg: #fff;
+            --star-btn-border: #ccc;
+            --star-btn-hover: #999;
+            --delete-color: #c00;
+            --delete-hover: #f00;
+            --success-color: #0a0;
+            --error-color: #c00;
+        }
+
+        /* Dark mode */
+        [data-theme="dark"] {
+            --bg-color: #1a1a1a;
+            --text-color: #e0e0e0;
+            --container-bg: #2a2a2a;
+            --border-color: #444;
+            --border-strong: #666;
+            --code-bg: #333;
+            --meta-color: #999;
+            --link-color: #e0e0e0;
+            --accent-bg: #333;
+            --star-btn-bg: #2a2a2a;
+            --star-btn-border: #555;
+            --star-btn-hover: #777;
+            --delete-color: #f55;
+            --delete-hover: #f77;
+            --success-color: #5f5;
+            --error-color: #f55;
+        }
+
         body {
             font-family: "Courier New", "Liberation Mono", monospace;
-            background: #f5f5f5;
-            color: #333;
+            background: var(--bg-color);
+            color: var(--text-color);
             line-height: 1.6;
             padding: 2rem 1rem;
+            transition: background 0.3s, color 0.3s;
         }
         .container {
             max-width: 80ch;
@@ -149,7 +191,7 @@ const INDEX_HTML: &str = r##"
             font-size: 1.5rem;
             margin-bottom: 1rem;
             padding-bottom: 0.5rem;
-            border-bottom: 2px solid #333;
+            border-bottom: 2px solid var(--border-strong);
         }
         h1 a {
             color: inherit;
@@ -159,18 +201,18 @@ const INDEX_HTML: &str = r##"
             text-decoration: underline;
         }
         .help {
-            background: #fff;
-            border: 1px solid #ccc;
+            background: var(--container-bg);
+            border: 1px solid var(--border-color);
             padding: 1rem;
             margin-bottom: 1.5rem;
         }
         .help code {
-            background: #eee;
+            background: var(--code-bg);
             padding: 0.1rem 0.3rem;
         }
         .auth-box {
-            background: #fff;
-            border: 1px solid #ccc;
+            background: var(--container-bg);
+            border: 1px solid var(--border-color);
             padding: 1rem;
             margin-bottom: 1.5rem;
         }
@@ -178,7 +220,7 @@ const INDEX_HTML: &str = r##"
             font-size: 1rem;
             margin-bottom: 0.75rem;
             padding-bottom: 0.25rem;
-            border-bottom: 1px solid #ccc;
+            border-bottom: 1px solid var(--border-color);
         }
         .auth-form {
             display: flex;
@@ -189,53 +231,56 @@ const INDEX_HTML: &str = r##"
         .auth-form input {
             font-family: inherit;
             padding: 0.25rem 0.5rem;
-            border: 1px solid #ccc;
+            border: 1px solid var(--border-color);
+            background: var(--bg-color);
+            color: var(--text-color);
             flex: 1;
             min-width: 120px;
         }
         .auth-form button {
             font-family: inherit;
             padding: 0.25rem 0.75rem;
-            background: #333;
-            color: #fff;
+            background: var(--border-strong);
+            color: var(--bg-color);
             border: none;
             cursor: pointer;
         }
         .auth-form button:hover {
-            background: #555;
+            background: var(--text-color);
         }
         .api-key-display {
-            background: #f5f5f5;
-            border: 1px solid #ccc;
+            background: var(--accent-bg);
+            border: 1px solid var(--border-color);
             padding: 0.75rem;
             margin-top: 0.5rem;
         }
         .api-key-display pre {
             margin: 0.5rem 0;
             font-family: inherit;
-            background: #fff;
+            background: var(--container-bg);
             padding: 0.5rem;
-            border: 1px solid #ccc;
+            border: 1px solid var(--border-color);
             word-break: break-all;
         }
         .api-key-display button {
             font-family: inherit;
             padding: 0.25rem 0.5rem;
-            background: #fff;
-            border: 1px solid #333;
+            background: var(--container-bg);
+            border: 1px solid var(--border-strong);
+            color: var(--text-color);
             cursor: pointer;
             margin-top: 0.5rem;
         }
         .api-key-display button:hover {
-            background: #333;
-            color: #fff;
+            background: var(--border-strong);
+            color: var(--container-bg);
         }
         .error-msg {
-            color: #c00;
+            color: var(--error-color);
             margin-top: 0.5rem;
         }
         .success-msg {
-            color: #0a0;
+            color: var(--success-color);
             margin-top: 0.5rem;
         }
         .snippet {
@@ -244,22 +289,21 @@ const INDEX_HTML: &str = r##"
         .snippet-desc {
             font-size: 1rem;
             font-weight: bold;
-            color: #333;
+            color: var(--text-color);
             margin-bottom: 0.5rem;
             padding: 0.25rem 0;
         }
         .snippet-lang {
             font-size: 0.75rem;
-            color: #666;
-            background: #eee;
+            color: var(--meta-color);
+            background: var(--code-bg);
             padding: 0.1rem 0.4rem;
             margin-left: 0.5rem;
             text-transform: lowercase;
         }
         .snippet-content {
-            background: #fff;
-            border: 1px solid #333;
-            padding: 1rem;
+            background: var(--container-bg);
+            border: 1px solid var(--border-strong);
             margin-bottom: 0.5rem;
         }
         .snippet-content pre {
@@ -268,16 +312,16 @@ const INDEX_HTML: &str = r##"
             white-space: pre-wrap;
             word-break: break-word;
             overflow-x: auto;
-            color: #222;
+            color: var(--text-color);
             line-height: 1.5;
         }
         .snippet-meta {
             font-size: 0.875rem;
-            color: #666;
+            color: var(--meta-color);
             text-align: right;
         }
         .snippet-meta a {
-            color: #333;
+            color: var(--link-color);
             text-decoration: none;
         }
         .snippet-meta a:hover {
@@ -288,21 +332,21 @@ const INDEX_HTML: &str = r##"
             font-size: 0.875rem;
             background: none;
             border: none;
-            color: #c00;
+            color: var(--delete-color);
             cursor: pointer;
             padding: 0;
             margin-left: 0.5rem;
         }
         .delete-btn:hover {
-            color: #f00;
+            color: var(--delete-hover);
             text-decoration: underline;
         }
         .star-btn {
             font-family: inherit;
             font-size: 0.875rem;
-            background: #fff;
-            border: 1px solid #ccc;
-            color: #666;
+            background: var(--star-btn-bg);
+            border: 1px solid var(--star-btn-border);
+            color: var(--meta-color);
             cursor: pointer;
             padding: 0.1rem 0.4rem;
             margin-left: 0.5rem;
@@ -310,18 +354,23 @@ const INDEX_HTML: &str = r##"
             transition: all 0.2s;
         }
         .star-btn:hover {
-            background: #f5f5f5;
-            border-color: #999;
-            color: #333;
+            background: var(--bg-color);
+            border-color: var(--star-btn-hover);
+            color: var(--text-color);
         }
         .star-btn.starred {
             background: #fff8e1;
             border-color: #ffc107;
             color: #ff8f00;
         }
+        [data-theme="dark"] .star-btn.starred {
+            background: #5c4a00;
+            border-color: #ffab00;
+            color: #ffd54f;
+        }
         .star-count {
             font-size: 0.875rem;
-            color: #666;
+            color: var(--meta-color);
             margin-left: 0.5rem;
         }
         .pagination {
@@ -331,18 +380,19 @@ const INDEX_HTML: &str = r##"
             gap: 1rem;
             margin-top: 1.5rem;
             padding-top: 1rem;
-            border-top: 1px solid #ccc;
+            border-top: 1px solid var(--border-color);
         }
         .pagination button {
             font-family: inherit;
             padding: 0.25rem 0.75rem;
-            background: #fff;
-            border: 1px solid #333;
+            background: var(--container-bg);
+            border: 1px solid var(--border-strong);
+            color: var(--text-color);
             cursor: pointer;
         }
         .pagination button:hover:not(:disabled) {
-            background: #333;
-            color: #fff;
+            background: var(--border-strong);
+            color: var(--container-bg);
         }
         .pagination button:disabled {
             opacity: 0.3;
@@ -351,11 +401,11 @@ const INDEX_HTML: &str = r##"
         .loading, .empty {
             text-align: center;
             padding: 2rem;
-            color: #666;
+            color: var(--meta-color);
         }
         .search-box {
-            background: #fff;
-            border: 1px solid #ccc;
+            background: var(--container-bg);
+            border: 1px solid var(--border-color);
             padding: 1rem;
             margin-bottom: 1.5rem;
         }
@@ -363,7 +413,7 @@ const INDEX_HTML: &str = r##"
             font-size: 1rem;
             margin-bottom: 0.75rem;
             padding-bottom: 0.25rem;
-            border-bottom: 1px solid #ccc;
+            border-bottom: 1px solid var(--border-color);
         }
         .search-form {
             display: flex;
@@ -373,7 +423,9 @@ const INDEX_HTML: &str = r##"
         .search-form input, .search-form select {
             font-family: inherit;
             padding: 0.25rem 0.5rem;
-            border: 1px solid #ccc;
+            border: 1px solid var(--border-color);
+            background: var(--bg-color);
+            color: var(--text-color);
         }
         .search-form input[type="text"] {
             flex: 2;
@@ -386,27 +438,36 @@ const INDEX_HTML: &str = r##"
         .search-form button {
             font-family: inherit;
             padding: 0.25rem 0.75rem;
-            background: #333;
-            color: #fff;
+            background: var(--border-strong);
+            color: var(--bg-color);
             border: none;
             cursor: pointer;
         }
         .search-form button:hover {
-            background: #555;
+            background: var(--text-color);
         }
         .clear-search {
             font-size: 0.875rem;
-            color: #666;
+            color: var(--meta-color);
             margin-top: 0.5rem;
         }
         .clear-search a {
-            color: #333;
+            color: var(--link-color);
+        }
+        .theme-toggle {
+            cursor: pointer;
+            user-select: none;
+            margin-left: 0.5rem;
+        }
+        .hljs {
+          color: var(--text-color);
+          background: var(--bg-color);
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1><a href="/">snip</a><span id="header-suffix"> ~ code snippets</span> <span style="font-size: 0.875rem; font-weight: normal; float: right;"><a href="#" id="search-toggle" onclick="toggleSearch(); return false;">+search</a> <a href="#" id="auth-toggle" onclick="toggleAuth(); return false;">+auth</a></span></h1>
+        <h1><a href="/">snip</a><span id="header-suffix"> ~ code snippets</span> <span style="font-size: 0.875rem; font-weight: normal; float: right;"><span class="theme-toggle" onclick="toggleTheme()" title="Toggle dark mode">🌙</span> <a href="#" id="search-toggle" onclick="toggleSearch(); return false;">+search</a> <a href="#" id="auth-toggle" onclick="toggleAuth(); return false;">+auth</a></span></h1>
 
         <div class="help" id="help-box">
             <p>$ <strong>echo</strong> <span style="color: #888">"text"</span> | <strong>snip</strong> <em>--desc</em> <span style="color: #888">"note"</span> <em>--lang</em> <span style="color: #888">rust</span></p>
@@ -1026,6 +1087,65 @@ const INDEX_HTML: &str = r##"
             loadSingleSnippet();
         } else {
             loadSnippets();
+        }
+
+        // Theme toggle
+        function initTheme() {
+            const savedTheme = localStorage.getItem('snip_theme');
+            if (savedTheme === 'dark') {
+                document.documentElement.setAttribute('data-theme', 'dark');
+                updateThemeIcon(true);
+            } else if (savedTheme === 'light') {
+                document.documentElement.setAttribute('data-theme', 'light');
+                updateThemeIcon(false);
+            } else {
+                // Check system preference
+                if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+                    document.documentElement.setAttribute('data-theme', 'dark');
+                    updateThemeIcon(true);
+                }
+            }
+        }
+
+        function updateThemeIcon(isDark) {
+            const toggle = document.querySelector('.theme-toggle');
+            toggle.textContent = isDark ? '☀️' : '🌙';
+            toggle.title = isDark ? 'Switch to light mode' : 'Switch to dark mode';
+        }
+
+        function toggleTheme() {
+            const currentTheme = document.documentElement.getAttribute('data-theme');
+            const isDark = currentTheme === 'dark';
+
+            if (isDark) {
+                document.documentElement.setAttribute('data-theme', 'light');
+                localStorage.setItem('snip_theme', 'light');
+                updateThemeIcon(false);
+            } else {
+                document.documentElement.setAttribute('data-theme', 'dark');
+                localStorage.setItem('snip_theme', 'dark');
+                updateThemeIcon(true);
+            }
+        }
+
+        // Initialize theme on load
+        initTheme();
+
+        // Listen for system theme changes
+        if (window.matchMedia) {
+            window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
+                const savedTheme = localStorage.getItem('snip_theme');
+                if (!savedTheme) {
+                    // Only auto-switch if user hasn't manually set theme
+                    if (e.matches) {
+                        document.documentElement.setAttribute('data-theme', 'dark');
+                        updateThemeIcon(true);
+                    } else {
+                        document.documentElement.setAttribute('data-theme', 'light');
+                        updateThemeIcon(false);
+                    }
+                }
+            });
         }
     </script>
 </body>
