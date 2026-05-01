@@ -25,7 +25,12 @@ sudo systemctl enable --now snip
 
 **Docker**:
 ```bash
-docker run -d -p 3000:3000 -v snip_data:/data ghcr.io/skorotkiewicz/snip
+# Build and run
+docker build -t snip .
+docker run -d -p 3000:3000 -v snip_data:/data snip
+
+# Or use docker-compose
+docker-compose up -d
 ```
 
 **From source**:
