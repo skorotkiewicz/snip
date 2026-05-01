@@ -18,13 +18,8 @@ struct Args {
     #[arg(short, long, help = "API key (or set SNIP_API_KEY env var)")]
     api_key: Option<String>,
 
-    #[arg(
-        short,
-        long,
-        default_value = "http://localhost:3000",
-        help = "Server URL"
-    )]
-    server: String,
+    #[arg(short, long, help = "Server URL (or set SNIP_URL_SERVER env var)")]
+    server: Option<String>,
 }
 
 #[tokio::main]
@@ -35,6 +30,11 @@ async fn main() -> anyhow::Result<()> {
         .api_key
         .or_else(|| std::env::var("SNIP_API_KEY").ok())
         .expect("API key required. Use --api-key or set SNIP_API_KEY env var");
+
+    let server = args
+        .server
+        .or_else(|| std::env::var("SNIP_URL_SERVER").ok())
+        .unwrap_or_else(|| "http://localhost:3000".to_string());
 
     // Read from stdin
     let mut content = String::new();
@@ -50,7 +50,7 @@ async fn main() -> anyhow::Result<()> {
     let client = reqwest::Client::new();
 
     let response = client
-        .post(format!("{}/api/snippets", args.server))
+        .post(format!("{}/api/snippets", server))
         .header("X-API-Key", api_key)
         .header("Content-Type", "application/json")
         .json(&serde_json::json!({
@@ -72,7 +72,7 @@ async fn main() -> anyhow::Result<()> {
         }
         println!(
             "View at: {}/s/{}",
-            args.server,
+            server,
             snippet["id"].as_i64().unwrap_or(0)
         );
     } else {

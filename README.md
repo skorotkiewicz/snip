@@ -177,6 +177,9 @@ Data persists in `snip.db` (SQLite).
 # Custom database path
 DATABASE_URL=sqlite:/path/to/snip.db ./target/release/snipped
 
-# CLI server URL
+# CLI environment variables
+SNIP_API_KEY=xxx SNIP_URL_SERVER=http://localhost:3000 ./target/release/snip
+
+# Or with flags
 SNIP_API_KEY=xxx ./target/release/snip --server http://localhost:3000
 ```
