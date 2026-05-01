@@ -7,98 +7,92 @@ pub const INDEX_HTML: &str = r##"
     <title>snip</title>
     <link id="hljs-theme" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/bash.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/c.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/cpp.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/csharp.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/css.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/go.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/java.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/javascript.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/json.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/kotlin.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/lua.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/php.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/python.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/ruby.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/rust.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/scala.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/sql.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/swift.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/typescript.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/yaml.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/zig.min.js"></script>
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
+        /* ===== Reset & Variables ===== */
+        *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 
-        /* Light mode (default) */
         :root {
-            --bg-color: #f5f5f5;
-            --text-color: #333;
-            --container-bg: #fff;
-            --border-color: #ccc;
+            --bg: #f5f5f5;
+            --fg: #333;
+            --card: #fff;
+            --border: #ccc;
             --border-strong: #333;
             --code-bg: #eee;
-            --meta-color: #666;
-            --link-color: #333;
-            --accent-bg: #f5f5f5;
-            --star-btn-bg: #fff;
-            --star-btn-border: #ccc;
-            --star-btn-hover: #999;
-            --delete-color: #c00;
-            --delete-hover: #f00;
-            --success-color: #0a0;
-            --error-color: #c00;
+            --muted: #666;
+            --link: #333;
+            --star-bg: #fff;
+            --star-border: #ccc;
+            --star-hover: #999;
+            --danger: #c00;
+            --danger-hover: #f00;
+            --success: #0a0;
+            --error: #c00;
         }
 
-        /* Dark mode */
         [data-theme="dark"] {
-            --bg-color: #1a1a1a;
-            --text-color: #e0e0e0;
-            --container-bg: #111;
-            --border-color: #444;
+            --bg: #1a1a1a;
+            --fg: #e0e0e0;
+            --card: #111;
+            --border: #444;
             --border-strong: #666;
             --code-bg: #333;
-            --meta-color: #999;
-            --link-color: #e0e0e0;
-            --accent-bg: #333;
-            --star-btn-bg: #2a2a2a;
-            --star-btn-border: #555;
-            --star-btn-hover: #777;
-            --delete-color: #f55;
-            --delete-hover: #f77;
-            --success-color: #5f5;
-            --error-color: #f55;
+            --muted: #999;
+            --link: #e0e0e0;
+            --star-bg: #2a2a2a;
+            --star-border: #555;
+            --star-hover: #777;
+            --danger: #f55;
+            --danger-hover: #f77;
+            --success: #5f5;
+            --error: #f55;
         }
 
+        /* ===== Base ===== */
         body {
             font-family: "Courier New", "Liberation Mono", monospace;
-            background: var(--bg-color);
-            color: var(--text-color);
+            background: var(--bg);
+            color: var(--fg);
             line-height: 1.6;
             padding: 2rem 1rem;
             transition: background 0.3s, color 0.3s;
         }
-        .container {
-            max-width: 80ch;
-            margin: 0 auto;
-        }
-        h1 {
-            font-size: 1.5rem;
+
+        .container { max-width: 80ch; margin: 0 auto; }
+
+        /* ===== Header ===== */
+        .site-header {
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            flex-wrap: wrap;
             margin-bottom: 1rem;
             padding-bottom: 0.5rem;
             border-bottom: 2px solid var(--border-strong);
         }
-        h1 a {
-            color: inherit;
-            text-decoration: none;
+        .site-header h1 {
+            font-size: 1.5rem;
         }
-        h1 a:hover {
-            text-decoration: underline;
+        .site-header h1 a { color: inherit; text-decoration: none; }
+        .site-header h1 a:hover { text-decoration: underline; }
+        .header-nav {
+            font-size: 0.875rem;
+            font-weight: normal;
+            display: flex;
+            gap: 0.5rem;
+            align-items: center;
         }
+        .header-nav a { color: var(--link); }
+        .theme-toggle {
+            cursor: pointer;
+            user-select: none;
+        }
+
+        /* ===== Help Box ===== */
         .help {
-            background: var(--container-bg);
-            border: 1px solid var(--border-color);
+            background: var(--card);
+            border: 1px solid var(--border);
             padding: 1rem;
             margin-bottom: 1.5rem;
         }
@@ -106,98 +100,122 @@ pub const INDEX_HTML: &str = r##"
             background: var(--code-bg);
             padding: 0.1rem 0.3rem;
         }
-        .auth-box {
-            background: var(--container-bg);
-            border: 1px solid var(--border-color);
+        .help .hint {
+            font-size: 0.75rem;
+            margin-top: 0.5rem;
+            color: var(--muted);
+        }
+        .help .arg { color: var(--muted); }
+
+        /* ===== Panels (shared for search & auth) ===== */
+        .panel {
+            background: var(--card);
+            border: 1px solid var(--border);
             padding: 1rem;
             margin-bottom: 1.5rem;
         }
-        .auth-box h3 {
+        .panel h3 {
             font-size: 1rem;
             margin-bottom: 0.75rem;
             padding-bottom: 0.25rem;
-            border-bottom: 1px solid var(--border-color);
+            border-bottom: 1px solid var(--border);
         }
-        .auth-form {
+
+        /* ===== Forms ===== */
+        .form-row {
             display: flex;
             gap: 0.5rem;
             flex-wrap: wrap;
-            margin-bottom: 0.5rem;
         }
-        .auth-form input {
+        .form-row input,
+        .form-row select {
             font-family: inherit;
             padding: 0.25rem 0.5rem;
-            border: 1px solid var(--border-color);
-            background: var(--bg-color);
-            color: var(--text-color);
+            border: 1px solid var(--border);
+            background: var(--bg);
+            color: var(--fg);
+        }
+        .form-row input[type="text"],
+        .form-row input[type="password"] {
             flex: 1;
             min-width: 120px;
         }
-        .auth-form button {
+        .form-row select { flex: 1; min-width: 100px; }
+        .btn {
             font-family: inherit;
             padding: 0.25rem 0.75rem;
-            background: var(--border-strong);
-            color: var(--bg-color);
-            border: none;
             cursor: pointer;
+            border: none;
+            background: var(--border-strong);
+            color: var(--bg);
         }
-        .auth-form button:hover {
-            background: var(--text-color);
+        .btn:hover { background: var(--fg); }
+        .btn-secondary {
+            background: var(--card);
+            color: var(--fg);
+            border: 1px solid var(--border-strong);
         }
+        .btn-secondary:hover {
+            background: var(--border-strong);
+            color: var(--card);
+        }
+        .form-sub {
+            margin-top: 0.5rem;
+            font-size: 0.875rem;
+        }
+        .form-sub a { color: var(--link); }
+        .msg { margin-top: 0.5rem; }
+        .msg-error { color: var(--error); }
+        .msg-success { color: var(--success); }
+
+        /* ===== Search ===== */
+        .search-input { flex: 2 !important; min-width: 150px !important; }
+        .clear-search {
+            font-size: 0.875rem;
+            color: var(--muted);
+            margin-top: 0.5rem;
+        }
+        .clear-search a { color: var(--link); }
+
+        /* ===== API Key ===== */
         .api-key-display {
-            border: 1px solid var(--border-color);
+            border: 1px solid var(--border);
             padding: 0.75rem;
             margin-top: 0.5rem;
         }
         .api-key-display pre {
             margin: 0.5rem 0;
             font-family: inherit;
-            background: var(--container-bg);
+            background: var(--card);
             padding: 0.5rem;
-            border: 1px solid var(--border-color);
+            border: 1px solid var(--border);
             word-break: break-all;
         }
-        .api-key-display button {
-            font-family: inherit;
-            padding: 0.25rem 0.5rem;
-            background: var(--container-bg);
-            border: 1px solid var(--border-strong);
-            color: var(--text-color);
-            cursor: pointer;
+        .api-key-actions {
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
             margin-top: 0.5rem;
         }
-        .api-key-display button:hover {
-            background: var(--border-strong);
-            color: var(--container-bg);
-        }
-        .error-msg {
-            color: var(--error-color);
-            margin-top: 0.5rem;
-        }
-        .success-msg {
-            color: var(--success-color);
-            margin-top: 0.5rem;
-        }
-        .snippet {
-            margin-bottom: 2rem;
-        }
-        .snippet-desc {
+
+        /* ===== Snippets ===== */
+        .snippet { margin-bottom: 2rem; }
+        .snippet-header {
             font-size: 1rem;
             font-weight: bold;
-            color: var(--text-color);
             margin-bottom: 0.5rem;
             padding: 0.25rem 0;
         }
         .snippet-lang {
             font-size: 0.75rem;
-            color: var(--meta-color);
+            color: var(--muted);
             background: var(--code-bg);
             padding: 0.1rem 0.4rem;
             margin-left: 0.5rem;
             text-transform: lowercase;
         }
         .snippet-content {
-            background: var(--container-bg);
+            background: var(--card);
             border: 1px solid var(--border-strong);
             margin-bottom: 0.5rem;
         }
@@ -207,41 +225,33 @@ pub const INDEX_HTML: &str = r##"
             white-space: pre-wrap;
             word-break: break-word;
             overflow-x: auto;
-            color: var(--text-color);
             line-height: 1.5;
         }
         .snippet-meta {
             font-size: 0.875rem;
-            color: var(--meta-color);
+            color: var(--muted);
             text-align: right;
         }
-        .snippet-meta a {
-            color: var(--link-color);
-            text-decoration: none;
-        }
-        .snippet-meta a:hover {
-            text-decoration: underline;
-        }
+        .snippet-meta a { color: var(--link); text-decoration: none; }
+        .snippet-meta a:hover { text-decoration: underline; }
+        .raw-link { font-size: 0.75rem; color: var(--muted); }
         .delete-btn {
             font-family: inherit;
             font-size: 0.875rem;
             background: none;
             border: none;
-            color: var(--delete-color);
+            color: var(--danger);
             cursor: pointer;
             padding: 0;
             margin-left: 0.5rem;
         }
-        .delete-btn:hover {
-            color: var(--delete-hover);
-            text-decoration: underline;
-        }
+        .delete-btn:hover { color: var(--danger-hover); text-decoration: underline; }
         .star-btn {
             font-family: inherit;
             font-size: 0.875rem;
-            background: var(--star-btn-bg);
-            border: 1px solid var(--star-btn-border);
-            color: var(--meta-color);
+            background: var(--star-bg);
+            border: 1px solid var(--star-border);
+            color: var(--muted);
             cursor: pointer;
             padding: 0.1rem 0.4rem;
             margin-left: 0.5rem;
@@ -249,9 +259,9 @@ pub const INDEX_HTML: &str = r##"
             transition: all 0.2s;
         }
         .star-btn:hover {
-            background: var(--bg-color);
-            border-color: var(--star-btn-hover);
-            color: var(--text-color);
+            background: var(--bg);
+            border-color: var(--star-hover);
+            color: var(--fg);
         }
         .star-btn.starred {
             background: #fff8e1;
@@ -265,9 +275,11 @@ pub const INDEX_HTML: &str = r##"
         }
         .star-count {
             font-size: 0.875rem;
-            color: var(--meta-color);
+            color: var(--muted);
             margin-left: 0.5rem;
         }
+
+        /* ===== Pagination ===== */
         .pagination {
             display: flex;
             justify-content: center;
@@ -275,104 +287,117 @@ pub const INDEX_HTML: &str = r##"
             gap: 1rem;
             margin-top: 1.5rem;
             padding-top: 1rem;
-            border-top: 1px solid var(--border-color);
+            border-top: 1px solid var(--border);
         }
         .pagination button {
             font-family: inherit;
             padding: 0.25rem 0.75rem;
-            background: var(--container-bg);
+            background: var(--card);
             border: 1px solid var(--border-strong);
-            color: var(--text-color);
+            color: var(--fg);
             cursor: pointer;
         }
         .pagination button:hover:not(:disabled) {
             background: var(--border-strong);
-            color: var(--container-bg);
+            color: var(--card);
         }
         .pagination button:disabled {
             opacity: 0.3;
             cursor: default;
         }
+
+        /* ===== Toast Notifications ===== */
+        #toast-container {
+            position: fixed;
+            top: 1rem;
+            right: 1rem;
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            pointer-events: none;
+        }
+        .toast {
+            padding: 0.5rem 1rem;
+            font-family: inherit;
+            font-size: 0.875rem;
+            border: 1px solid var(--border);
+            background: var(--card);
+            color: var(--fg);
+            animation: toast-in 0.2s ease;
+            max-width: 30ch;
+            pointer-events: auto;
+        }
+        .toast-success { border-color: var(--success); color: var(--success); }
+        .toast-error { border-color: var(--error); color: var(--error); }
+        .toast-exit { animation: toast-out 0.3s ease forwards; }
+        @keyframes toast-in { from { opacity: 0; transform: translateX(1rem); } to { opacity: 1; transform: none; } }
+        @keyframes toast-out { from { opacity: 1; } to { opacity: 0; transform: translateX(1rem); } }
+
+        /* ===== Confirm Modal ===== */
+        .confirm-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 999;
+        }
+        .confirm-box {
+            background: var(--card);
+            border: 1px solid var(--border-strong);
+            padding: 1.5rem;
+            max-width: 40ch;
+            font-family: inherit;
+        }
+        .confirm-box p { margin-bottom: 1rem; }
+        .confirm-actions { display: flex; gap: 0.5rem; justify-content: flex-end; }
+        .btn-danger { background: var(--danger); color: #fff; border: none; }
+        .btn-danger:hover { background: var(--danger-hover); }
+
+        /* ===== Misc ===== */
         .loading, .empty {
             text-align: center;
             padding: 2rem;
-            color: var(--meta-color);
+            color: var(--muted);
         }
-        .search-box {
-            background: var(--container-bg);
-            border: 1px solid var(--border-color);
-            padding: 1rem;
-            margin-bottom: 1.5rem;
-        }
-        .search-box h3 {
-            font-size: 1rem;
-            margin-bottom: 0.75rem;
-            padding-bottom: 0.25rem;
-            border-bottom: 1px solid var(--border-color);
-        }
-        .search-form {
-            display: flex;
-            gap: 0.5rem;
-            flex-wrap: wrap;
-        }
-        .search-form input, .search-form select {
-            font-family: inherit;
-            padding: 0.25rem 0.5rem;
-            border: 1px solid var(--border-color);
-            background: var(--bg-color);
-            color: var(--text-color);
-        }
-        .search-form input[type="text"] {
-            flex: 2;
-            min-width: 150px;
-        }
-        .search-form select {
-            flex: 1;
-            min-width: 100px;
-        }
-        .search-form button {
-            font-family: inherit;
-            padding: 0.25rem 0.75rem;
-            background: var(--border-strong);
-            color: var(--bg-color);
-            border: none;
-            cursor: pointer;
-        }
-        .search-form button:hover {
-            background: var(--text-color);
-        }
-        .clear-search {
-            font-size: 0.875rem;
-            color: var(--meta-color);
-            margin-top: 0.5rem;
-        }
-        .clear-search a {
-            color: var(--link-color);
-        }
-        .theme-toggle {
-            cursor: pointer;
-            user-select: none;
-            margin-left: 0.5rem;
-        }
-        .hljs {
-          color: var(--text-color);
-          background: var(--bg-color);
-        }
+        [hidden] { display: none !important; }
+        .hljs { color: var(--fg); background: var(--bg); }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1><a href="/">snip</a><span id="header-suffix"> ~ code snippets</span> <span style="font-size: 0.875rem; font-weight: normal; float: right;"><span class="theme-toggle" onclick="toggleTheme()" title="Toggle dark mode">🌙</span> <a href="#" id="search-toggle" onclick="toggleSearch(); return false;">+search</a> <a href="#" id="auth-toggle" onclick="toggleAuth(); return false;">+auth</a></span></h1>
+    <div id="toast-container" aria-live="polite"></div>
 
-        <div class="help" id="help-box">
-            <p>$ <strong>echo</strong> <span style="color: #888">"text"</span> | <strong>snip</strong> <em>--desc</em> <span style="color: #888">"note"</span> <em>--lang</em> <span style="color: #888">rust</span></p>
-            <p style="font-size: 12px; margin-top: 0.5rem; color: #666;"># POST /api/register {username, password} to get API key</p>
+    <div id="confirm-overlay" class="confirm-overlay" hidden>
+        <div class="confirm-box" role="dialog" aria-modal="true">
+            <p id="confirm-msg"></p>
+            <div class="confirm-actions">
+                <button class="btn btn-danger" id="confirm-yes">confirm</button>
+                <button class="btn btn-secondary" id="confirm-no">cancel</button>
+            </div>
         </div>
+    </div>
 
-        <div class="search-box" id="search-box" style="display:none;">
+    <div class="container">
+        <header class="site-header">
+            <h1><a href="/">snip</a><span id="header-suffix"> ~ code snippets</span></h1>
+            <nav class="header-nav">
+                <span class="theme-toggle" id="theme-toggle" tabindex="0" role="button" aria-label="Toggle theme">🌙</span>
+                <a href="#" id="search-toggle">+search</a>
+                <a href="#" id="auth-toggle">+auth</a>
+            </nav>
+        </header>
+
+        <section class="help" id="help-box">
+            <p>$ <strong>echo</strong> <span class="arg">"text"</span> | <strong>snip</strong> <em>--desc</em> <span class="arg">"note"</span> <em>--lang</em> <span class="arg">rust</span></p>
+            <p class="hint"># POST /api/register {"username", "password"} to get API key</p>
+        </section>
+
+        <section class="panel" id="search-box" hidden>
             <h3>~ search</h3>
-            <div class="search-form">
-                <input type="text" id="search-input" placeholder="search in content or description...">
+            <form class="form-row" id="search-form">
+                <input type="text" id="search-input" class="search-input" placeholder="search in content or description...">
                 <select id="search-lang">
                     <option value="all">all languages</option>
                     <option value="plaintext">plaintext</option>
@@ -401,659 +426,650 @@ pub const INDEX_HTML: &str = r##"
                     <option value="yaml">yaml</option>
                     <option value="zig">zig</option>
                 </select>
-                <button onclick="doSearch()">search</button>
+                <button type="submit" class="btn">search</button>
+            </form>
+            <div class="clear-search" id="clear-search" hidden>
+                <a href="#" id="clear-search-link">&lt; clear search</a>
             </div>
-            <div class="clear-search" id="clear-search" style="display:none;">
-                <a href="#" onclick="clearSearch(); return false;">&lt; clear search</a>
-            </div>
-        </div>
+        </section>
 
-        <div class="auth-box" id="auth-box" style="display:none;">
+        <section class="panel" id="auth-box" hidden>
             <h3>~ auth</h3>
-            <div id="login-form">
-                <div class="auth-form">
-                    <input type="text" id="login-user" placeholder="username">
-                    <input type="password" id="login-pass" placeholder="password">
-                    <button onclick="doLogin()">login</button>
+
+            <form id="login-form">
+                <div class="form-row">
+                    <input type="text" id="login-user" placeholder="username" autocomplete="username">
+                    <input type="password" id="login-pass" placeholder="password" autocomplete="current-password">
+                    <button type="submit" class="btn">login</button>
                 </div>
-                <div style="margin-top: 0.5rem; font-size: 0.875rem;">
-                    <a href="#" onclick="showRegister(); return false;" id="show-register-link">register</a>
+                <div class="form-sub"><a href="#" id="show-register-link">register</a></div>
+                <div id="login-msg" class="msg"></div>
+            </form>
+
+            <form id="register-form" hidden>
+                <div class="form-row">
+                    <input type="text" id="register-user" placeholder="username (3-32 chars)" autocomplete="username">
+                    <input type="password" id="register-pass" placeholder="password (6+ chars)" autocomplete="new-password">
+                    <button type="submit" class="btn">register</button>
                 </div>
-                <div id="login-msg"></div>
-            </div>
-            <div id="register-form" style="display:none;">
-                <div class="auth-form">
-                    <input type="text" id="register-user" placeholder="username (3-32 chars)">
-                    <input type="password" id="register-pass" placeholder="password (6+ chars)">
-                    <button onclick="doRegister()">register</button>
-                </div>
-                <div style="margin-top: 0.5rem; font-size: 0.875rem;">
-                    <a href="#" onclick="showLogin(); return false;">&lt; back to login</a>
-                </div>
-                <div id="register-msg"></div>
-            </div>
-            <div id="api-key-box" style="display:none;">
+                <div class="form-sub"><a href="#" id="show-login-link">&lt; back to login</a></div>
+                <div id="register-msg" class="msg"></div>
+            </form>
+
+            <div id="api-key-box" hidden>
                 <div class="api-key-display">
                     <strong>API Key:</strong>
                     <pre id="api-key-value"></pre>
-                    <button onclick="copyApiKey()">copy</button>
-                    <button onclick="doRevoke()" style="margin-left: 0.5rem;">revoke & regenerate</button>
-                    <button onclick="showChangePassword()" style="margin-left: 0.5rem;">change password</button>
-                    <button onclick="doLogout()" style="margin-left: 0.5rem;">logout</button>
-                    <div id="revoke-msg"></div>
-                </div>
-                <div id="change-password-form" style="display:none; margin-top: 1rem;">
-                    <div class="auth-form">
-                        <input type="password" id="old-password" placeholder="old password">
-                        <input type="password" id="new-password" placeholder="new password (6+ chars)">
-                        <button onclick="doChangePassword()">change</button>
-                        <button onclick="hideChangePassword()" style="background: #fff; color: #333; border: 1px solid #333;">cancel</button>
+                    <div class="api-key-actions">
+                        <button class="btn btn-secondary" id="copy-key-btn">copy</button>
+                        <button class="btn btn-secondary" id="revoke-btn">revoke &amp; regenerate</button>
+                        <button class="btn btn-secondary" id="change-pass-btn">change password</button>
+                        <button class="btn btn-secondary" id="logout-btn">logout</button>
                     </div>
-                    <div id="change-password-msg"></div>
+                    <div id="revoke-msg" class="msg"></div>
                 </div>
+                <form id="change-password-form" hidden style="margin-top: 1rem;">
+                    <div class="form-row">
+                        <input type="password" id="old-password" placeholder="old password" autocomplete="current-password">
+                        <input type="password" id="new-password" placeholder="new password (6+ chars)" autocomplete="new-password">
+                        <button type="submit" class="btn">change</button>
+                        <button type="button" class="btn btn-secondary" id="cancel-change-pass">cancel</button>
+                    </div>
+                    <div id="change-password-msg" class="msg"></div>
+                </form>
             </div>
-        </div>
+        </section>
 
-        <div id="snippets">
+        <main id="snippets">
             <div class="loading">loading...</div>
-        </div>
+        </main>
 
-        <div class="pagination" id="pagination"></div>
+        <nav class="pagination" id="pagination"></nav>
     </div>
 
     <script>
-        const ITEMS_PER_PAGE = 10;
-        let currentPage = 1;
-        let totalPages = 1;
-        let searchQuery = '';
-        let searchLang = 'all';
+    /* ==========================================================
+       snip — Code Snippet Viewer
+       ========================================================== */
 
-        // Parse URL to determine view mode
-        const pathParts = window.location.pathname.split('/');
-        const profileUser = pathParts[1] === 'u' ? pathParts[2] : null;
-        const singleSnippetId = pathParts[1] === 's' ? pathParts[2] : null;
+    // ===== Configuration =====
+    const PER_PAGE = 10;
 
-        async function loadSingleSnippet() {
-            if (!singleSnippetId) return;
+    // ===== State =====
+    const state = {
+        page: 1,
+        totalPages: 1,
+        searchQuery: '',
+        searchLang: 'all',
+        profileUser: null,
+        snippetId: null,
+    };
 
-            try {
-                const response = await fetch(`/api/snippets/${singleSnippetId}`);
-                if (response.ok) {
-                    const snippet = await response.json();
-                    document.getElementById('header-suffix').textContent = ` ~ snippet #${snippet.id}`;
-                    document.getElementById('help-box').style.display = 'none';
-                    document.getElementById('search-box').style.display = 'none';
-                    document.getElementById('auth-box').style.display = 'none';
-                    document.getElementById('pagination').style.display = 'none';
+    // Parse URL routing
+    const pathParts = window.location.pathname.split('/');
+    if (pathParts[1] === 'u' && pathParts[2]) state.profileUser = pathParts[2];
+    if (pathParts[1] === 's' && pathParts[2]) state.snippetId = pathParts[2];
 
-                    // Load star status for single snippet
-                    const apiKey = localStorage.getItem('snip_api_key');
-                    if (apiKey) {
-                        try {
-                            const starResp = await fetch(`/api/snippets/${snippet.id}/star`, {
-                                headers: { 'X-API-Key': apiKey }
-                            });
-                            if (starResp.ok) {
-                                const starData = await starResp.json();
-                                snippet.starred = starData.starred;
-                                snippet.stars = starData.total_stars;
-                            }
-                        } catch (e) {
-                            // Ignore errors
-                        }
-                    }
+    // ===== Utilities =====
+    function escapeHtml(text) {
+        const d = document.createElement('div');
+        d.textContent = text;
+        return d.innerHTML;
+    }
 
-                    renderSnippets([snippet]);
-                } else if (response.status === 404) {
-                    document.getElementById('snippets').innerHTML = '<div class="empty">Snippet not found</div>';
-                } else {
-                    document.getElementById('snippets').innerHTML = '<div class="empty">Error loading snippet</div>';
-                }
-            } catch (error) {
-                document.getElementById('snippets').innerHTML = '<div class="empty">Error loading snippet</div>';
-            }
+    function formatDate(dateStr) {
+        return new Date(dateStr).toISOString().slice(0, 16).replace('T', ' ');
+    }
+
+    function getAuth() {
+        return {
+            apiKey: localStorage.getItem('snip_api_key'),
+            username: localStorage.getItem('snip_username'),
+        };
+    }
+
+    function setAuth(apiKey, username) {
+        localStorage.setItem('snip_api_key', apiKey);
+        localStorage.setItem('snip_username', username);
+    }
+
+    function clearAuth() {
+        localStorage.removeItem('snip_api_key');
+        localStorage.removeItem('snip_username');
+    }
+
+    // ===== Toast =====
+    function toast(message, type = 'info') {
+        const el = document.createElement('div');
+        el.className = `toast toast-${type}`;
+        el.textContent = message;
+        document.getElementById('toast-container').appendChild(el);
+        setTimeout(() => {
+            el.classList.add('toast-exit');
+            el.addEventListener('animationend', () => el.remove());
+        }, 2500);
+    }
+
+    // ===== Confirm Modal =====
+    let confirmResolve = null;
+
+    function showConfirm(message) {
+        return new Promise(resolve => {
+            confirmResolve = resolve;
+            document.getElementById('confirm-msg').textContent = message;
+            document.getElementById('confirm-overlay').hidden = false;
+        });
+    }
+
+    function resolveConfirm(result) {
+        document.getElementById('confirm-overlay').hidden = true;
+        if (confirmResolve) {
+            confirmResolve(result);
+            confirmResolve = null;
         }
+    }
 
-        async function loadSnippets(page = 1) {
-            currentPage = page;
-            let url;
+    // ===== API Helper =====
+    async function apiFetch(url, options = {}) {
+        const { apiKey, ...opts } = options;
+        if (apiKey) {
+            opts.headers = { ...(opts.headers || {}), 'X-API-Key': apiKey };
+        }
+        return fetch(url, opts);
+    }
 
-            if (singleSnippetId) {
-                // Single snippet view - handled separately
+    async function fetchStarStatuses(snippets) {
+        const { apiKey } = getAuth();
+        if (!apiKey || !snippets.length) return;
+        await Promise.all(snippets.map(async s => {
+            try {
+                const resp = await apiFetch(`/api/snippets/${s.id}/star`, { apiKey });
+                if (resp.ok) {
+                    const d = await resp.json();
+                    s.starred = d.starred;
+                    s.stars = d.total_stars;
+                }
+            } catch (e) { /* ignore */ }
+        }));
+    }
+
+    // ===== Rendering =====
+    function renderSnippets(snippets) {
+        const container = document.getElementById('snippets');
+        if (!snippets.length) {
+            container.innerHTML = '<div class="empty">No snippets yet.</div>';
+            return;
+        }
+        const { apiKey, username } = getAuth();
+
+        container.innerHTML = snippets.map(s => {
+            const author = state.profileUser
+                ? escapeHtml(s.author)
+                : `<a href="/u/${escapeHtml(s.author)}">${escapeHtml(s.author)}</a>`;
+            const langTag = s.language && s.language !== 'plaintext'
+                ? `<span class="snippet-lang">${escapeHtml(s.language)}</span>` : '';
+            const desc = (s.description || langTag)
+                ? `<div class="snippet-header">${s.description ? escapeHtml(s.description) : ''}${langTag}</div>` : '';
+            const isOwner = apiKey && s.author === username;
+            const deleteBtn = isOwner
+                ? ` <button class="delete-btn" data-action="delete" data-id="${s.id}">[x]</button>` : '';
+            const starCount = s.stars || 0;
+            const starBtn = apiKey
+                ? ` <button class="star-btn${s.starred ? ' starred' : ''}" data-action="star" data-id="${s.id}" title="${s.starred ? 'Unstar' : 'Star'}">${s.starred ? '★' : '☆'} ${starCount}</button>`
+                : ` <span class="star-count">☆ ${starCount}</span>`;
+            const langClass = s.language && s.language !== 'plaintext' ? ` class="language-${s.language}"` : '';
+            const views = s.views || 0;
+            return `<div class="snippet" id="snippet-${s.id}">
+                    ${desc}
+                    <div class="snippet-content"><pre><code${langClass}>${escapeHtml(s.content)}</code></pre></div>
+                    <div class="snippet-meta">${author} · <a href="/s/${s.id}">${formatDate(s.created_at)}</a> · ${views} views${starBtn} · <a href="/raw/${s.id}" class="raw-link">raw</a>${deleteBtn}</div>
+                </div>`;
+        }).join('');
+
+        container.querySelectorAll('pre code').forEach(block => hljs.highlightElement(block));
+    }
+
+    function renderPagination() {
+        const container = document.getElementById('pagination');
+        if (state.totalPages <= 1) { container.innerHTML = ''; return; }
+        container.innerHTML = `
+            <button ${state.page === 1 ? 'disabled' : ''} data-page="${state.page - 1}">&lt; prev</button>
+            <span>${state.page}/${state.totalPages}</span>
+            <button ${state.page === state.totalPages ? 'disabled' : ''} data-page="${state.page + 1}">next &gt;</button>`;
+    }
+
+    // ===== Data Loading =====
+    async function loadSingleSnippet() {
+        const container = document.getElementById('snippets');
+        try {
+            const resp = await fetch(`/api/snippets/${state.snippetId}`);
+            if (!resp.ok) {
+                container.innerHTML = resp.status === 404
+                    ? '<div class="empty">Snippet not found</div>'
+                    : '<div class="empty">Error loading snippet</div>';
                 return;
-            } else if (searchQuery || (searchLang && searchLang !== 'all')) {
-                // Use search endpoint
-                const params = new URLSearchParams();
-                params.append('page', page);
-                params.append('limit', ITEMS_PER_PAGE);
-                if (searchQuery) params.append('q', searchQuery);
-                if (searchLang && searchLang !== 'all') params.append('lang', searchLang);
-                url = `/api/search?${params.toString()}`;
-            } else if (profileUser) {
-                url = `/api/users/${profileUser}/snippets?page=${page}&limit=${ITEMS_PER_PAGE}`;
+            }
+            const snippet = await resp.json();
+            document.getElementById('header-suffix').textContent = ` ~ snippet #${snippet.id}`;
+            document.getElementById('help-box').hidden = true;
+            document.getElementById('search-box').hidden = true;
+            document.getElementById('auth-box').hidden = true;
+            document.getElementById('pagination').innerHTML = '';
+            await fetchStarStatuses([snippet]);
+            renderSnippets([snippet]);
+        } catch (e) {
+            container.innerHTML = '<div class="empty">Error loading snippet</div>';
+        }
+    }
+
+    async function loadSnippets(page = 1) {
+        state.page = page;
+        const container = document.getElementById('snippets');
+        let url;
+        if (state.searchQuery || (state.searchLang && state.searchLang !== 'all')) {
+            const params = new URLSearchParams({ page, limit: PER_PAGE });
+            if (state.searchQuery) params.append('q', state.searchQuery);
+            if (state.searchLang !== 'all') params.append('lang', state.searchLang);
+            url = `/api/search?${params}`;
+        } else if (state.profileUser) {
+            url = `/api/users/${state.profileUser}/snippets?page=${page}&limit=${PER_PAGE}`;
+        } else {
+            url = `/api/snippets?page=${page}&limit=${PER_PAGE}`;
+        }
+        try {
+            const resp = await fetch(url);
+            const data = await resp.json();
+            state.totalPages = Math.ceil(data.total / PER_PAGE) || 1;
+            await fetchStarStatuses(data.snippets);
+            renderSnippets(data.snippets);
+            renderPagination();
+        } catch (e) {
+            container.innerHTML = '<div class="empty">Error loading snippets</div>';
+        }
+    }
+
+    function refreshSnippets() {
+        if (state.snippetId) loadSingleSnippet();
+        else loadSnippets(state.page);
+    }
+
+    // ===== Snippet Actions =====
+    async function deleteSnippet(id) {
+        const { apiKey } = getAuth();
+        if (!apiKey) { toast('Not authenticated', 'error'); return; }
+        if (!(await showConfirm('Delete this snippet?'))) return;
+        try {
+            const resp = await apiFetch(`/api/snippets/${id}`, { method: 'DELETE', apiKey });
+            if (resp.ok) {
+                document.getElementById(`snippet-${id}`)?.remove();
+                toast('Snippet deleted', 'success');
+            } else if (resp.status === 403) {
+                toast('Can only delete your own snippets', 'error');
             } else {
-                url = `/api/snippets?page=${page}&limit=${ITEMS_PER_PAGE}`;
+                toast('Failed to delete', 'error');
             }
+        } catch (e) { toast('Error deleting snippet', 'error'); }
+    }
 
-            try {
-                const response = await fetch(url);
-                const data = await response.json();
-
-                totalPages = Math.ceil(data.total / ITEMS_PER_PAGE) || 1;
-
-                // Load star status for each snippet if user is logged in
-                const apiKey = localStorage.getItem('snip_api_key');
-                if (apiKey && data.snippets) {
-                    await Promise.all(data.snippets.map(async (s) => {
-                        try {
-                            const starResp = await fetch(`/api/snippets/${s.id}/star`, {
-                                headers: { 'X-API-Key': apiKey }
-                            });
-                            if (starResp.ok) {
-                                const starData = await starResp.json();
-                                s.starred = starData.starred;
-                                s.stars = starData.total_stars;
-                            }
-                        } catch (e) {
-                            // Ignore errors
-                        }
-                    }));
-                }
-
-                renderSnippets(data.snippets);
-                renderPagination();
-            } catch (error) {
-                document.getElementById('snippets').innerHTML =
-                    '<div class="empty">Error loading snippets</div>';
+    async function toggleStar(id, btn) {
+        const { apiKey } = getAuth();
+        if (!apiKey) { toast('Please login to star snippets', 'error'); return; }
+        const isStarred = btn.classList.contains('starred');
+        try {
+            const resp = await apiFetch(`/api/snippets/${id}/star`, {
+                method: isStarred ? 'DELETE' : 'POST',
+                apiKey,
+            });
+            if (resp.ok) {
+                const data = await resp.json();
+                const count = data.total_stars || 0;
+                btn.textContent = data.starred ? `★ ${count}` : `☆ ${count}`;
+                btn.title = data.starred ? 'Unstar' : 'Star';
+                btn.classList.toggle('starred', data.starred);
+            } else if (resp.status === 401) {
+                toast('Session expired. Please login again.', 'error');
+            } else {
+                toast('Failed to update star', 'error');
             }
+        } catch (e) { toast('Error starring snippet', 'error'); }
+    }
+
+    // ===== Auth =====
+    function showApiKey(key) {
+        document.getElementById('login-form').hidden = true;
+        document.getElementById('register-form').hidden = true;
+        document.getElementById('api-key-box').hidden = false;
+        document.getElementById('auth-box').hidden = false;
+        document.getElementById('auth-toggle').textContent = '-auth';
+        document.getElementById('api-key-value').textContent = key;
+    }
+
+    function resetAuthForms() {
+        document.getElementById('login-form').hidden = false;
+        document.getElementById('register-form').hidden = true;
+        document.getElementById('api-key-box').hidden = true;
+        document.getElementById('login-user').value = '';
+        document.getElementById('login-pass').value = '';
+        document.getElementById('register-user').value = '';
+        document.getElementById('register-pass').value = '';
+        document.getElementById('login-msg').innerHTML = '';
+        document.getElementById('register-msg').innerHTML = '';
+        document.getElementById('revoke-msg').innerHTML = '';
+        hideChangePassword();
+    }
+
+    function showChangePassword() {
+        document.getElementById('change-password-form').hidden = false;
+        document.getElementById('change-password-msg').innerHTML = '';
+    }
+
+    function hideChangePassword() {
+        document.getElementById('change-password-form').hidden = true;
+        document.getElementById('old-password').value = '';
+        document.getElementById('new-password').value = '';
+        document.getElementById('change-password-msg').innerHTML = '';
+    }
+
+    async function doLogin(e) {
+        e.preventDefault();
+        const username = document.getElementById('login-user').value;
+        const password = document.getElementById('login-pass').value;
+        const msgDiv = document.getElementById('login-msg');
+        if (!username || !password) {
+            msgDiv.innerHTML = '<div class="msg-error">enter username and password</div>';
+            return;
         }
-
-        function doSearch() {
-            searchQuery = document.getElementById('search-input').value.trim();
-            searchLang = document.getElementById('search-lang').value;
-
-            if (!searchQuery && searchLang === 'all') {
-                clearSearch();
-                return;
+        try {
+            const resp = await fetch('/api/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password }),
+            });
+            if (resp.ok) {
+                const data = await resp.json();
+                setAuth(data.api_key, data.username);
+                showApiKey(data.api_key);
+                msgDiv.innerHTML = '<div class="msg-success">login successful</div>';
+                refreshSnippets();
+            } else {
+                const error = await resp.text();
+                msgDiv.innerHTML = `<div class="msg-error">${escapeHtml(error)}</div>`;
             }
-
-            document.getElementById('clear-search').style.display = 'block';
-            currentPage = 1;
-            loadSnippets(1);
+        } catch (e) {
+            msgDiv.innerHTML = '<div class="msg-error">login failed</div>';
         }
+    }
 
-        function clearSearch() {
-            searchQuery = '';
-            searchLang = 'all';
-            document.getElementById('search-input').value = '';
-            document.getElementById('search-lang').value = 'all';
-            document.getElementById('clear-search').style.display = 'none';
-            currentPage = 1;
-            loadSnippets(1);
+    async function doRegister(e) {
+        e.preventDefault();
+        const username = document.getElementById('register-user').value;
+        const password = document.getElementById('register-pass').value;
+        const msgDiv = document.getElementById('register-msg');
+        if (!username || !password) {
+            msgDiv.innerHTML = '<div class="msg-error">enter username and password</div>'; return;
         }
+        if (username.length < 3 || username.length > 32) {
+            msgDiv.innerHTML = '<div class="msg-error">username must be 3-32 characters</div>'; return;
+        }
+        if (password.length < 6) {
+            msgDiv.innerHTML = '<div class="msg-error">password must be at least 6 characters</div>'; return;
+        }
+        try {
+            const resp = await fetch('/api/register', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password }),
+            });
+            if (resp.ok) {
+                const data = await resp.json();
+                setAuth(data.api_key, data.username);
+                showApiKey(data.api_key);
+                msgDiv.innerHTML = '<div class="msg-success">registration successful</div>';
+                document.getElementById('register-user').value = '';
+                document.getElementById('register-pass').value = '';
+                refreshSnippets();
+            } else if (resp.status === 409) {
+                msgDiv.innerHTML = '<div class="msg-error">username already exists</div>';
+            } else {
+                const error = await resp.text();
+                msgDiv.innerHTML = `<div class="msg-error">${escapeHtml(error)}</div>`;
+            }
+        } catch (e) {
+            msgDiv.innerHTML = '<div class="msg-error">registration failed</div>';
+        }
+    }
 
-        // Allow Enter key to trigger search
-        document.getElementById('search-input').addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') doSearch();
+    async function doRevoke() {
+        const { apiKey, username } = getAuth();
+        const msgDiv = document.getElementById('revoke-msg');
+        if (!apiKey) return;
+        if (!(await showConfirm('Are you sure? This will invalidate your old API key.'))) return;
+        try {
+            const resp = await apiFetch('/api/revoke-key', { method: 'POST', apiKey });
+            if (resp.ok) {
+                const data = await resp.json();
+                setAuth(data.new_api_key, username);
+                showApiKey(data.new_api_key);
+                msgDiv.innerHTML = '<div class="msg-success">API key revoked and regenerated</div>';
+            } else {
+                const error = await resp.text();
+                msgDiv.innerHTML = `<div class="msg-error">${escapeHtml(error)}</div>`;
+            }
+        } catch (e) {
+            msgDiv.innerHTML = '<div class="msg-error">revoke failed</div>';
+        }
+    }
+
+    async function doChangePassword(e) {
+        e.preventDefault();
+        const { apiKey } = getAuth();
+        const oldPass = document.getElementById('old-password').value;
+        const newPass = document.getElementById('new-password').value;
+        const msgDiv = document.getElementById('change-password-msg');
+        if (!oldPass || !newPass) {
+            msgDiv.innerHTML = '<div class="msg-error">enter both old and new passwords</div>'; return;
+        }
+        if (newPass.length < 6) {
+            msgDiv.innerHTML = '<div class="msg-error">new password must be at least 6 characters</div>'; return;
+        }
+        try {
+            const resp = await apiFetch('/api/change-password', {
+                method: 'POST',
+                apiKey,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ old_password: oldPass, new_password: newPass }),
+            });
+            if (resp.ok) {
+                msgDiv.innerHTML = '<div class="msg-success">password changed successfully</div>';
+                setTimeout(hideChangePassword, 2000);
+            } else if (resp.status === 401) {
+                msgDiv.innerHTML = '<div class="msg-error">invalid old password</div>';
+            } else {
+                const error = await resp.text();
+                msgDiv.innerHTML = `<div class="msg-error">${escapeHtml(error)}</div>`;
+            }
+        } catch (e) {
+            msgDiv.innerHTML = '<div class="msg-error">failed to change password</div>';
+        }
+    }
+
+    function doLogout() {
+        clearAuth();
+        resetAuthForms();
+        document.getElementById('auth-box').hidden = true;
+        document.getElementById('auth-toggle').textContent = '+auth';
+        toast('Logged out', 'success');
+        refreshSnippets();
+    }
+
+    async function copyApiKey() {
+        const key = document.getElementById('api-key-value').textContent;
+        try {
+            await navigator.clipboard.writeText(key);
+            toast('Copied to clipboard', 'success');
+        } catch (e) {
+            toast('Failed to copy', 'error');
+        }
+    }
+
+    // ===== Search =====
+    function doSearch(e) {
+        e.preventDefault();
+        state.searchQuery = document.getElementById('search-input').value.trim();
+        state.searchLang = document.getElementById('search-lang').value;
+        if (!state.searchQuery && state.searchLang === 'all') { clearSearch(); return; }
+        document.getElementById('clear-search').hidden = false;
+        loadSnippets(1);
+    }
+
+    function clearSearch() {
+        state.searchQuery = '';
+        state.searchLang = 'all';
+        document.getElementById('search-input').value = '';
+        document.getElementById('search-lang').value = 'all';
+        document.getElementById('clear-search').hidden = true;
+        loadSnippets(1);
+    }
+
+    // ===== Theme =====
+    function initTheme() {
+        const saved = localStorage.getItem('snip_theme');
+        const prefersDark = window.matchMedia?.('(prefers-color-scheme: dark)').matches;
+        const isDark = saved === 'dark' || (!saved && prefersDark);
+        applyTheme(isDark);
+    }
+
+    function applyTheme(isDark) {
+        document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+        const toggle = document.getElementById('theme-toggle');
+        toggle.textContent = isDark ? '☀️' : '🌙';
+        toggle.title = isDark ? 'Switch to light mode' : 'Switch to dark mode';
+        document.getElementById('hljs-theme').href = isDark
+            ? 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css'
+            : 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css';
+    }
+
+    function toggleTheme() {
+        const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+        const next = !isDark;
+        localStorage.setItem('snip_theme', next ? 'dark' : 'light');
+        applyTheme(next);
+    }
+
+    // ===== Event Binding =====
+    function bindEvents() {
+        // Theme
+        document.getElementById('theme-toggle').addEventListener('click', toggleTheme);
+        document.getElementById('theme-toggle').addEventListener('keydown', e => {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleTheme(); }
         });
 
-        function renderSnippets(snippets) {
-            const container = document.getElementById('snippets');
+        // Panel toggles
+        document.getElementById('search-toggle').addEventListener('click', e => {
+            e.preventDefault();
+            const box = document.getElementById('search-box');
+            const hidden = !box.hidden;
+            box.hidden = hidden;
+            e.currentTarget.textContent = hidden ? '+search' : '-search';
+        });
 
-            if (snippets.length === 0) {
-                container.innerHTML = '<div class="empty">No snippets yet.</div>';
-                return;
-            }
+        document.getElementById('auth-toggle').addEventListener('click', e => {
+            e.preventDefault();
+            const box = document.getElementById('auth-box');
+            const hidden = !box.hidden;
+            box.hidden = hidden;
+            e.currentTarget.textContent = hidden ? '+auth' : '-auth';
+        });
 
-            const currentUser = localStorage.getItem('snip_username');
-            const apiKey = localStorage.getItem('snip_api_key');
+        // Search
+        document.getElementById('search-form').addEventListener('submit', doSearch);
+        document.getElementById('clear-search-link').addEventListener('click', e => {
+            e.preventDefault(); clearSearch();
+        });
 
-            container.innerHTML = snippets.map(s => {
-                const authorLink = profileUser
-                    ? escapeHtml(s.author)
-                    : `<a href="/u/${escapeHtml(s.author)}">${escapeHtml(s.author)}</a>`;
-                const langTag = s.language && s.language !== 'plaintext' ? `<span class="snippet-lang">${escapeHtml(s.language)}</span>` : '';
-                const descHtml = s.description ? `<div class="snippet-desc">${escapeHtml(s.description)}${langTag}</div>` : langTag ? `<div class="snippet-desc">${langTag}</div>` : '';
-                const isOwner = apiKey && s.author === currentUser;
-                const deleteBtn = isOwner ? ` <button class="delete-btn" onclick="deleteSnippet(${s.id})">[x]</button>` : '';
-                const starCount = s.stars || 0;
-                const starBtn = apiKey
-                    ? ` <button class="star-btn ${s.starred ? 'starred' : ''}" onclick="toggleStar(${s.id}, this)" title="${s.starred ? 'Unstar' : 'Star'}">${s.starred ? '★' : '☆'} ${starCount}</button>`
-                    : ` <span class="star-count">☆ ${starCount}</span>`;
-                const langClass = s.language && s.language !== 'plaintext' ? ` class="language-${s.language}"` : '';
-                const views = s.views || 0;
-                return `
-                <div class="snippet" id="snippet-${s.id}">
-                    ${descHtml}
-                    <div class="snippet-content">
-                        <pre><code${langClass}>${escapeHtml(s.content)}</code></pre>
-                    </div>
-                    <div class="snippet-meta">${authorLink} · <a href="/s/${s.id}">${formatDate(s.created_at)}</a> · ${views} views${starBtn} · <a href="/raw/${s.id}" style="font-size: 0.75rem; color: #999;">raw</a>${deleteBtn}</div>
-                </div>
-            `}).join('');
-
-            // Apply syntax highlighting
-            container.querySelectorAll('pre code').forEach((block) => {
-                hljs.highlightElement(block);
-            });
-        }
-
-        async function deleteSnippet(id) {
-            if (!confirm('Delete this snippet?')) return;
-
-            const apiKey = localStorage.getItem('snip_api_key');
-            if (!apiKey) {
-                alert('Not authenticated');
-                return;
-            }
-
-            try {
-                const response = await fetch(`/api/snippets/${id}`, {
-                    method: 'DELETE',
-                    headers: { 'X-API-Key': apiKey }
-                });
-
-                if (response.ok) {
-                    document.getElementById(`snippet-${id}`).remove();
-                } else if (response.status === 403) {
-                    alert('Can only delete your own snippets');
-                } else {
-                    alert('Failed to delete');
-                }
-            } catch (e) {
-                alert('Error deleting snippet');
-            }
-        }
-
-        async function toggleStar(id, btn) {
-            const apiKey = localStorage.getItem('snip_api_key');
-            if (!apiKey) {
-                alert('Please login to star snippets');
-                return;
-            }
-
-            const isStarred = btn.classList.contains('starred');
-            const method = isStarred ? 'DELETE' : 'POST';
-
-            try {
-                const response = await fetch(`/api/snippets/${id}/star`, {
-                    method: method,
-                    headers: { 'X-API-Key': apiKey }
-                });
-
-                if (response.ok) {
-                    const data = await response.json();
-                    const count = data.total_stars || 0;
-                    btn.textContent = data.starred ? `★ ${count}` : `☆ ${count}`;
-                    btn.title = data.starred ? 'Unstar' : 'Star';
-                    if (data.starred) {
-                        btn.classList.add('starred');
-                    } else {
-                        btn.classList.remove('starred');
-                    }
-                } else if (response.status === 401) {
-                    alert('Session expired. Please login again.');
-                } else {
-                    alert('Failed to update star');
-                }
-            } catch (e) {
-                alert('Error starring snippet');
-            }
-        }
-
-        function renderPagination() {
-            const container = document.getElementById('pagination');
-
-            if (totalPages <= 1) {
-                container.innerHTML = '';
-                return;
-            }
-
-            container.innerHTML = `
-                <button ${currentPage === 1 ? 'disabled' : ''} onclick="loadSnippets(${currentPage - 1})">&lt; prev</button>
-                <span>${currentPage}/${totalPages}</span>
-                <button ${currentPage === totalPages ? 'disabled' : ''} onclick="loadSnippets(${currentPage + 1})">next &gt;</button>
-            `;
-        }
-
-        function escapeHtml(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
-        }
-
-        function formatDate(dateStr) {
-            const d = new Date(dateStr);
-            return d.toISOString().slice(0,16).replace('T',' ');
-        }
-
-        // Update UI for profile view
-        if (profileUser) {
-            document.getElementById('header-suffix').textContent = ` ~ ${profileUser}`;
-        }
-
-        // Auth functions
-        async function doLogin() {
-            const username = document.getElementById('login-user').value;
-            const password = document.getElementById('login-pass').value;
-            const msgDiv = document.getElementById('login-msg');
-
-            if (!username || !password) {
-                msgDiv.innerHTML = '<div class="error-msg">enter username and password</div>';
-                return;
-            }
-
-            try {
-                const response = await fetch('/api/login', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ username, password })
-                });
-
-                if (response.ok) {
-                    const data = await response.json();
-                    localStorage.setItem('snip_api_key', data.api_key);
-                    localStorage.setItem('snip_username', data.username);
-                    showApiKey(data.api_key);
-                    msgDiv.innerHTML = '<div class="success-msg">login successful</div>';
-                } else {
-                    const error = await response.text();
-                    msgDiv.innerHTML = `<div class="error-msg">${escapeHtml(error)}</div>`;
-                }
-            } catch (e) {
-                msgDiv.innerHTML = '<div class="error-msg">login failed</div>';
-            }
-        }
-
-        function showRegister() {
-            document.getElementById('login-form').style.display = 'none';
-            document.getElementById('register-form').style.display = 'block';
+        // Auth forms
+        document.getElementById('login-form').addEventListener('submit', doLogin);
+        document.getElementById('register-form').addEventListener('submit', doRegister);
+        document.getElementById('show-register-link').addEventListener('click', e => {
+            e.preventDefault();
+            document.getElementById('login-form').hidden = true;
+            document.getElementById('register-form').hidden = false;
             document.getElementById('login-msg').innerHTML = '';
-        }
-
-        function showLogin() {
-            document.getElementById('register-form').style.display = 'none';
-            document.getElementById('login-form').style.display = 'block';
+        });
+        document.getElementById('show-login-link').addEventListener('click', e => {
+            e.preventDefault();
+            document.getElementById('register-form').hidden = true;
+            document.getElementById('login-form').hidden = false;
             document.getElementById('register-msg').innerHTML = '';
-        }
+        });
 
-        async function doRegister() {
-            const username = document.getElementById('register-user').value;
-            const password = document.getElementById('register-pass').value;
-            const msgDiv = document.getElementById('register-msg');
+        // API key actions
+        document.getElementById('copy-key-btn').addEventListener('click', copyApiKey);
+        document.getElementById('revoke-btn').addEventListener('click', doRevoke);
+        document.getElementById('change-pass-btn').addEventListener('click', showChangePassword);
+        document.getElementById('logout-btn').addEventListener('click', doLogout);
+        document.getElementById('cancel-change-pass').addEventListener('click', hideChangePassword);
+        document.getElementById('change-password-form').addEventListener('submit', doChangePassword);
 
-            if (!username || !password) {
-                msgDiv.innerHTML = '<div class="error-msg">enter username and password</div>';
-                return;
+        // Confirm modal
+        document.getElementById('confirm-yes').addEventListener('click', () => resolveConfirm(true));
+        document.getElementById('confirm-no').addEventListener('click', () => resolveConfirm(false));
+        document.getElementById('confirm-overlay').addEventListener('click', e => {
+            if (e.target === e.currentTarget) resolveConfirm(false);
+        });
+        document.addEventListener('keydown', e => {
+            if (e.key === 'Escape' && !document.getElementById('confirm-overlay').hidden) {
+                resolveConfirm(false);
             }
+        });
 
-            if (username.length < 3 || username.length > 32) {
-                msgDiv.innerHTML = '<div class="error-msg">username must be 3-32 characters</div>';
-                return;
-            }
+        // Snippet actions (event delegation)
+        document.getElementById('snippets').addEventListener('click', e => {
+            const btn = e.target.closest('[data-action]');
+            if (!btn) return;
+            const { action, id } = btn.dataset;
+            if (action === 'delete') deleteSnippet(id);
+            if (action === 'star') toggleStar(id, btn);
+        });
 
-            if (password.length < 6) {
-                msgDiv.innerHTML = '<div class="error-msg">password must be at least 6 characters</div>';
-                return;
-            }
+        // Pagination (event delegation)
+        document.getElementById('pagination').addEventListener('click', e => {
+            const btn = e.target.closest('[data-page]');
+            if (!btn || btn.disabled) return;
+            loadSnippets(parseInt(btn.dataset.page));
+        });
 
-            try {
-                const response = await fetch('/api/register', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ username, password })
-                });
+        // System theme change
+        window.matchMedia?.('(prefers-color-scheme: dark)').addEventListener('change', e => {
+            if (!localStorage.getItem('snip_theme')) applyTheme(e.matches);
+        });
+    }
 
-                if (response.ok) {
-                    const data = await response.json();
-                    localStorage.setItem('snip_api_key', data.api_key);
-                    localStorage.setItem('snip_username', data.username);
-                    showApiKey(data.api_key);
-                    msgDiv.innerHTML = '<div class="success-msg">registration successful</div>';
+    // ===== Init =====
+    function init() {
+        initTheme();
+        bindEvents();
 
-                    // Clear register form
-                    document.getElementById('register-user').value = '';
-                    document.getElementById('register-pass').value = '';
-                } else if (response.status === 409) {
-                    msgDiv.innerHTML = '<div class="error-msg">username already exists</div>';
-                } else {
-                    const error = await response.text();
-                    msgDiv.innerHTML = `<div class="error-msg">${escapeHtml(error)}</div>`;
-                }
-            } catch (e) {
-                msgDiv.innerHTML = '<div class="error-msg">registration failed</div>';
-            }
+        // Restore logged-in state (keep auth box hidden until toggled)
+        const { apiKey } = getAuth();
+        if (apiKey) {
+            document.getElementById('api-key-value').textContent = apiKey;
+            document.getElementById('login-form').hidden = true;
+            document.getElementById('register-form').hidden = true;
+            document.getElementById('api-key-box').hidden = false;
         }
 
-        async function doRevoke() {
-            const apiKey = localStorage.getItem('snip_api_key');
-            const msgDiv = document.getElementById('revoke-msg');
-
-            if (!apiKey) return;
-
-            if (!confirm('Are you sure? This will invalidate your old API key.')) return;
-
-            try {
-                const response = await fetch('/api/revoke-key', {
-                    method: 'POST',
-                    headers: { 'X-API-Key': apiKey }
-                });
-
-                if (response.ok) {
-                    const data = await response.json();
-                    localStorage.setItem('snip_api_key', data.new_api_key);
-                    showApiKey(data.new_api_key);
-                    msgDiv.innerHTML = '<div class="success-msg">API key revoked and regenerated</div>';
-                } else {
-                    const error = await response.text();
-                    msgDiv.innerHTML = `<div class="error-msg">${escapeHtml(error)}</div>`;
-                }
-            } catch (e) {
-                msgDiv.innerHTML = '<div class="error-msg">revoke failed</div>';
-            }
-        }
-
-        function doLogout() {
-            localStorage.removeItem('snip_api_key');
-            localStorage.removeItem('snip_username');
-            document.getElementById('login-form').style.display = 'block';
-            document.getElementById('register-form').style.display = 'none';
-            document.getElementById('api-key-box').style.display = 'none';
-            document.getElementById('auth-box').style.display = 'none';
-            document.getElementById('auth-toggle').textContent = '+auth';
-            document.getElementById('login-user').value = '';
-            document.getElementById('login-pass').value = '';
-            document.getElementById('register-user').value = '';
-            document.getElementById('register-pass').value = '';
-            document.getElementById('login-msg').innerHTML = '';
-            document.getElementById('register-msg').innerHTML = '';
-            document.getElementById('revoke-msg').innerHTML = '';
-            hideChangePassword();
-        }
-
-        function showChangePassword() {
-            document.getElementById('change-password-form').style.display = 'block';
-            document.getElementById('change-password-msg').innerHTML = '';
-        }
-
-        function hideChangePassword() {
-            document.getElementById('change-password-form').style.display = 'none';
-            document.getElementById('old-password').value = '';
-            document.getElementById('new-password').value = '';
-            document.getElementById('change-password-msg').innerHTML = '';
-        }
-
-        async function doChangePassword() {
-            const apiKey = localStorage.getItem('snip_api_key');
-            const oldPass = document.getElementById('old-password').value;
-            const newPass = document.getElementById('new-password').value;
-            const msgDiv = document.getElementById('change-password-msg');
-
-            if (!oldPass || !newPass) {
-                msgDiv.innerHTML = '<div class="error-msg">enter both old and new passwords</div>';
-                return;
-            }
-
-            if (newPass.length < 6) {
-                msgDiv.innerHTML = '<div class="error-msg">new password must be at least 6 characters</div>';
-                return;
-            }
-
-            try {
-                const response = await fetch('/api/change-password', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-API-Key': apiKey
-                    },
-                    body: JSON.stringify({ old_password: oldPass, new_password: newPass })
-                });
-
-                if (response.ok) {
-                    msgDiv.innerHTML = '<div class="success-msg">password changed successfully</div>';
-                    setTimeout(hideChangePassword, 2000);
-                } else if (response.status === 401) {
-                    msgDiv.innerHTML = '<div class="error-msg">invalid old password</div>';
-                } else {
-                    const error = await response.text();
-                    msgDiv.innerHTML = `<div class="error-msg">${escapeHtml(error)}</div>`;
-                }
-            } catch (e) {
-                msgDiv.innerHTML = '<div class="error-msg">failed to change password</div>';
-            }
-        }
-
-        function toggleSearch() {
-            const searchBox = document.getElementById('search-box');
-            const toggleLink = document.getElementById('search-toggle');
-            if (searchBox.style.display === 'none') {
-                searchBox.style.display = 'block';
-                toggleLink.textContent = '-search';
-            } else {
-                searchBox.style.display = 'none';
-                toggleLink.textContent = '+search';
-            }
-        }
-
-        function toggleAuth() {
-            const authBox = document.getElementById('auth-box');
-            const toggleLink = document.getElementById('auth-toggle');
-            if (authBox.style.display === 'none') {
-                authBox.style.display = 'block';
-                toggleLink.textContent = '-auth';
-            } else {
-                authBox.style.display = 'none';
-                toggleLink.textContent = '+auth';
-            }
-        }
-
-        function showApiKey(key) {
-            document.getElementById('login-form').style.display = 'none';
-            document.getElementById('register-form').style.display = 'none';
-            document.getElementById('api-key-box').style.display = 'block';
-            document.getElementById('auth-box').style.display = 'block';
-            document.getElementById('auth-toggle').textContent = '-auth';
-            document.getElementById('api-key-value').textContent = key;
-        }
-
-        function copyApiKey() {
-            const key = document.getElementById('api-key-value').textContent;
-            navigator.clipboard.writeText(key).then(() => {
-                const msgDiv = document.getElementById('revoke-msg');
-                msgDiv.innerHTML = '<div class="success-msg">copied to clipboard</div>';
-            });
-        }
-
-        // Check for existing session (stay logged in but auth box stays hidden)
-        const savedKey = localStorage.getItem('snip_api_key');
-        const savedUser = localStorage.getItem('snip_username');
-        if (savedKey && savedUser) {
-            // User is logged in, show API key in the hidden auth box
-            document.getElementById('api-key-value').textContent = savedKey;
-            document.getElementById('login-form').style.display = 'none';
-            document.getElementById('register-form').style.display = 'none';
-            document.getElementById('api-key-box').style.display = 'block';
+        // Update header for profile view
+        if (state.profileUser) {
+            document.getElementById('header-suffix').textContent = ` ~ ${state.profileUser}`;
         }
 
         // Load appropriate view
-        if (singleSnippetId) {
-            loadSingleSnippet();
-        } else {
-            loadSnippets();
-        }
+        if (state.snippetId) loadSingleSnippet();
+        else loadSnippets();
+    }
 
-        // Theme toggle
-        function initTheme() {
-            const savedTheme = localStorage.getItem('snip_theme');
-            if (savedTheme === 'dark') {
-                document.documentElement.setAttribute('data-theme', 'dark');
-                updateThemeIcon(true);
-                updateHljsTheme(true);
-            } else if (savedTheme === 'light') {
-                document.documentElement.setAttribute('data-theme', 'light');
-                updateThemeIcon(false);
-                updateHljsTheme(false);
-            } else {
-                // Check system preference
-                if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
-                    document.documentElement.setAttribute('data-theme', 'dark');
-                    updateThemeIcon(true);
-                    updateHljsTheme(true);
-                }
-            }
-        }
-
-        function updateThemeIcon(isDark) {
-            const toggle = document.querySelector('.theme-toggle');
-            toggle.textContent = isDark ? '☀️' : '🌙';
-            toggle.title = isDark ? 'Switch to light mode' : 'Switch to dark mode';
-        }
-
-        function updateHljsTheme(isDark) {
-            const themeLink = document.getElementById('hljs-theme');
-            const lightTheme = 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css';
-            const darkTheme = 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css';
-            themeLink.href = isDark ? darkTheme : lightTheme;
-        }
-
-        function toggleTheme() {
-            const currentTheme = document.documentElement.getAttribute('data-theme');
-            const isDark = currentTheme === 'dark';
-
-            if (isDark) {
-                document.documentElement.setAttribute('data-theme', 'light');
-                localStorage.setItem('snip_theme', 'light');
-                updateThemeIcon(false);
-                updateHljsTheme(false);
-            } else {
-                document.documentElement.setAttribute('data-theme', 'dark');
-                localStorage.setItem('snip_theme', 'dark');
-                updateThemeIcon(true);
-                updateHljsTheme(true);
-            }
-        }
-
-        // Initialize theme on load
-        initTheme();
-
-        // Listen for system theme changes
-        if (window.matchMedia) {
-            window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
-                const savedTheme = localStorage.getItem('snip_theme');
-                if (!savedTheme) {
-                    // Only auto-switch if user hasn't manually set theme
-                    if (e.matches) {
-                        document.documentElement.setAttribute('data-theme', 'dark');
-                        updateThemeIcon(true);
-                        updateHljsTheme(true);
-                    } else {
-                        document.documentElement.setAttribute('data-theme', 'light');
-                        updateThemeIcon(false);
-                        updateHljsTheme(false);
-                    }
-                }
-            });
-        }
+    init();
     </script>
 </body>
 </html>
