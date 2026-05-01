@@ -28,6 +28,25 @@ docker run -d -p 3000:3000 -v snip_data:/data snip
 # docker run -d -p 3000:3000 -v ./data:/data snip
 ```
 
+### systemd
+
+```bash
+# Copy binary and service file
+sudo cp target/release/snipped /usr/bin/
+sudo cp systemd/snip.service /etc/systemd/system/
+sudo cp systemd/snip.tmpfiles /usr/lib/tmpfiles.d/snip.conf
+
+# Create data directory
+sudo systemd-tmpfiles --create /usr/lib/tmpfiles.d/snip.conf
+
+# Enable and start service
+sudo systemctl daemon-reload
+sudo systemctl enable --now snip
+
+# Check status
+sudo systemctl status snip
+```
+
 ## Usage
 
 ### Register

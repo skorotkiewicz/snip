@@ -1,0 +1,3 @@
+# Create snipped data directory
+# Type Path                     Mode UID  GID  Age
+D /var/lib/snipped    0755 root root -

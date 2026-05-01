@@ -43,12 +43,12 @@ jobs:
           mkdir dist && cd dist
           cp ../target/${{ matrix.target }}/release/snipped snipped
           cp ../target/${{ matrix.target }}/release/snip snip
-          cp ../src/index.html index.html
           cp ../README.md README.md
           cp ../LICENSE LICENSE
           cp ../Dockerfile Dockerfile
           cp ../docker-compose.yml docker-compose.yml
           cp -r ../migrations migrations
+          cp -r ../systemd systemd
           tar czf ../snip-${{ github.ref_name }}-${{ matrix.target }}.tar.gz *
 
       - name: Package (Windows)
@@ -57,7 +57,6 @@ jobs:
           mkdir dist
           copy target\${{ matrix.target }}\release\snipped.exe dist\snipped.exe
           copy target\${{ matrix.target }}\release\snip.exe dist\snip.exe
-          copy src\index.html dist\index.html
           copy README.md dist\README.md
           copy LICENSE dist\LICENSE
           xcopy /E /I migrations dist\migrations
