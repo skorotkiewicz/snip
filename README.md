@@ -29,6 +29,33 @@ Response:
 {"id": 1, "username": "alice", "api_key": "..."}
 ```
 
+### Login
+
+```bash
+curl -X POST http://localhost:3000/api/login \
+  -H "Content-Type: application/json" \
+  -d '{"username": "alice", "password": "secret123"}'
+```
+
+Response:
+```json
+{"username": "alice", "api_key": "..."}
+```
+
+### Revoke API Key
+
+Invalidate the current API key and generate a new one:
+
+```bash
+curl -X POST http://localhost:3000/api/revoke-key \
+  -H "X-API-Key: YOUR_OLD_API_KEY"
+```
+
+Response:
+```json
+{"username": "alice", "old_api_key": "...", "new_api_key": "..."}
+```
+
 ### Post Snippet
 
 ```bash
@@ -70,6 +97,8 @@ curl http://localhost:3000/api/users/alice/snippets?page=1&limit=10
 | Method | Endpoint | Auth | Description |
 |--------|----------|------|-------------|
 | POST | `/api/register` | - | Create account, returns API key |
+| POST | `/api/login` | - | Login with password, returns API key |
+| POST | `/api/revoke-key` | API Key | Revoke old key, generate new API key |
 | POST | `/api/snippets` | API Key | Create snippet |
 | GET | `/api/snippets` | - | List all snippets |
 | GET | `/api/users/{username}/snippets` | - | List user snippets |

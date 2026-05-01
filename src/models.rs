@@ -25,6 +25,25 @@ pub struct CreateUserResponse {
     pub api_key: String,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct LoginRequest {
+    pub username: String,
+    pub password: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct LoginResponse {
+    pub username: String,
+    pub api_key: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct RevokeKeyResponse {
+    pub username: String,
+    pub old_api_key: String,
+    pub new_api_key: String,
+}
+
 #[derive(Debug, Serialize)]
 #[allow(dead_code)]
 pub struct Snippet {

@@ -41,6 +41,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/", get(serve_index))
         .route("/u/{username}", get(serve_index))
         .route("/api/register", post(register_user))
+        .route("/api/login", post(login))
+        .route("/api/revoke-key", post(revoke_api_key))
         .route("/api/snippets", post(create_snippet))
         .route("/api/snippets", get(list_snippets))
         .route("/api/users/{username}/snippets", get(list_user_snippets))
@@ -100,6 +102,76 @@ const INDEX_HTML: &str = r#"
         .help code {
             background: #eee;
             padding: 0.1rem 0.3rem;
+        }
+        .auth-box {
+            background: #fff;
+            border: 1px solid #ccc;
+            padding: 1rem;
+            margin-bottom: 1.5rem;
+        }
+        .auth-box h3 {
+            font-size: 1rem;
+            margin-bottom: 0.75rem;
+            padding-bottom: 0.25rem;
+            border-bottom: 1px solid #ccc;
+        }
+        .auth-form {
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+            margin-bottom: 0.5rem;
+        }
+        .auth-form input {
+            font-family: inherit;
+            padding: 0.25rem 0.5rem;
+            border: 1px solid #ccc;
+            flex: 1;
+            min-width: 120px;
+        }
+        .auth-form button {
+            font-family: inherit;
+            padding: 0.25rem 0.75rem;
+            background: #333;
+            color: #fff;
+            border: none;
+            cursor: pointer;
+        }
+        .auth-form button:hover {
+            background: #555;
+        }
+        .api-key-display {
+            background: #f5f5f5;
+            border: 1px solid #ccc;
+            padding: 0.75rem;
+            margin-top: 0.5rem;
+        }
+        .api-key-display pre {
+            margin: 0.5rem 0;
+            font-family: inherit;
+            background: #fff;
+            padding: 0.5rem;
+            border: 1px solid #ccc;
+            word-break: break-all;
+        }
+        .api-key-display button {
+            font-family: inherit;
+            padding: 0.25rem 0.5rem;
+            background: #fff;
+            border: 1px solid #333;
+            cursor: pointer;
+            margin-top: 0.5rem;
+        }
+        .api-key-display button:hover {
+            background: #333;
+            color: #fff;
+        }
+        .error-msg {
+            color: #c00;
+            margin-top: 0.5rem;
+        }
+        .success-msg {
+            color: #0a0;
+            margin-top: 0.5rem;
         }
         .snippet {
             margin-bottom: 2rem;
@@ -176,6 +248,28 @@ const INDEX_HTML: &str = r#"
         <div class="help" id="help-box">
             <p>$ echo "text" | snip --desc "note"</p>
             <p style="margin-top: 0.5rem; color: #666;"># POST /api/register {username, password} to get API key</p>
+        </div>
+
+        <div class="auth-box" id="auth-box">
+            <h3>~ auth</h3>
+            <div id="login-form">
+                <div class="auth-form">
+                    <input type="text" id="login-user" placeholder="username">
+                    <input type="password" id="login-pass" placeholder="password">
+                    <button onclick="doLogin()">login</button>
+                </div>
+                <div id="login-msg"></div>
+            </div>
+            <div id="api-key-box" style="display:none;">
+                <div class="api-key-display">
+                    <strong>API Key:</strong>
+                    <pre id="api-key-value"></pre>
+                    <button onclick="copyApiKey()">copy</button>
+                    <button onclick="doRevoke()" style="margin-left: 0.5rem;">revoke & regenerate</button>
+                    <button onclick="doLogout()" style="margin-left: 0.5rem;">logout</button>
+                    <div id="revoke-msg"></div>
+                </div>
+            </div>
         </div>
         
         <div id="snippets">
@@ -269,6 +363,98 @@ const INDEX_HTML: &str = r#"
             document.getElementById('header-suffix').textContent = ` ~ ${profileUser}`;
             document.getElementById('help-box').innerHTML = 
                 `<p><a href="/">&lt; back to all snippets</a></p>`;
+        }
+
+        // Auth functions
+        async function doLogin() {
+            const username = document.getElementById('login-user').value;
+            const password = document.getElementById('login-pass').value;
+            const msgDiv = document.getElementById('login-msg');
+            
+            if (!username || !password) {
+                msgDiv.innerHTML = '<div class="error-msg">enter username and password</div>';
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    localStorage.setItem('snip_api_key', data.api_key);
+                    localStorage.setItem('snip_username', data.username);
+                    showApiKey(data.api_key);
+                    msgDiv.innerHTML = '<div class="success-msg">login successful</div>';
+                } else {
+                    const error = await response.text();
+                    msgDiv.innerHTML = `<div class="error-msg">${escapeHtml(error)}</div>`;
+                }
+            } catch (e) {
+                msgDiv.innerHTML = '<div class="error-msg">login failed</div>';
+            }
+        }
+        
+        async function doRevoke() {
+            const apiKey = localStorage.getItem('snip_api_key');
+            const msgDiv = document.getElementById('revoke-msg');
+            
+            if (!apiKey) return;
+            
+            if (!confirm('Are you sure? This will invalidate your old API key.')) return;
+            
+            try {
+                const response = await fetch('/api/revoke-key', {
+                    method: 'POST',
+                    headers: { 'X-API-Key': apiKey }
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    localStorage.setItem('snip_api_key', data.new_api_key);
+                    showApiKey(data.new_api_key);
+                    msgDiv.innerHTML = '<div class="success-msg">API key revoked and regenerated</div>';
+                } else {
+                    const error = await response.text();
+                    msgDiv.innerHTML = `<div class="error-msg">${escapeHtml(error)}</div>`;
+                }
+            } catch (e) {
+                msgDiv.innerHTML = '<div class="error-msg">revoke failed</div>';
+            }
+        }
+        
+        function doLogout() {
+            localStorage.removeItem('snip_api_key');
+            localStorage.removeItem('snip_username');
+            document.getElementById('login-form').style.display = 'block';
+            document.getElementById('api-key-box').style.display = 'none';
+            document.getElementById('login-user').value = '';
+            document.getElementById('login-pass').value = '';
+            document.getElementById('login-msg').innerHTML = '';
+            document.getElementById('revoke-msg').innerHTML = '';
+        }
+        
+        function showApiKey(key) {
+            document.getElementById('login-form').style.display = 'none';
+            document.getElementById('api-key-box').style.display = 'block';
+            document.getElementById('api-key-value').textContent = key;
+        }
+        
+        function copyApiKey() {
+            const key = document.getElementById('api-key-value').textContent;
+            navigator.clipboard.writeText(key).then(() => {
+                const msgDiv = document.getElementById('revoke-msg');
+                msgDiv.innerHTML = '<div class="success-msg">copied to clipboard</div>';
+            });
+        }
+        
+        // Check for existing session
+        const savedKey = localStorage.getItem('snip_api_key');
+        if (savedKey) {
+            showApiKey(savedKey);
         }
 
         loadSnippets();

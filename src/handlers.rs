@@ -3,7 +3,7 @@ use axum::{
     extract::{Query, State},
     http::{HeaderMap, StatusCode},
 };
-use bcrypt::{DEFAULT_COST, hash};
+use bcrypt::{DEFAULT_COST, hash, verify};
 use uuid::Uuid;
 
 use crate::{AppState, models::*};
@@ -257,5 +257,106 @@ pub async fn list_user_snippets(
         total,
         page,
         limit,
+    }))
+}
+
+pub async fn login(
+    State(state): State<AppState>,
+    Json(req): Json<LoginRequest>,
+) -> Result<Json<LoginResponse>, (StatusCode, String)> {
+    let pool = state.db.pool();
+
+    let user: Option<(String, String)> =
+        sqlx::query_as("SELECT username, password_hash FROM users WHERE username = ?1")
+            .bind(&req.username)
+            .fetch_optional(pool)
+            .await
+            .map_err(|e| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("Database error: {}", e),
+                )
+            })?;
+
+    let (username, password_hash) = user.ok_or((
+        StatusCode::UNAUTHORIZED,
+        "Invalid username or password".to_string(),
+    ))?;
+
+    let valid = verify(&req.password, &password_hash).map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Password verification error: {}", e),
+        )
+    })?;
+
+    if !valid {
+        return Err((
+            StatusCode::UNAUTHORIZED,
+            "Invalid username or password".to_string(),
+        ));
+    }
+
+    let api_key: String = sqlx::query_scalar("SELECT api_key FROM users WHERE username = ?1")
+        .bind(&username)
+        .fetch_one(pool)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Database error: {}", e),
+            )
+        })?;
+
+    Ok(Json(LoginResponse { username, api_key }))
+}
+
+pub async fn revoke_api_key(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<RevokeKeyResponse>, (StatusCode, String)> {
+    let pool = state.db.pool();
+
+    let old_api_key = headers
+        .get("x-api-key")
+        .and_then(|v| v.to_str().ok())
+        .ok_or((
+            StatusCode::UNAUTHORIZED,
+            "Missing X-API-Key header".to_string(),
+        ))?;
+
+    let user: Option<(String, String)> =
+        sqlx::query_as("SELECT username, api_key FROM users WHERE api_key = ?1")
+            .bind(old_api_key)
+            .fetch_optional(pool)
+            .await
+            .map_err(|e| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("Database error: {}", e),
+                )
+            })?;
+
+    let (username, old_key) =
+        user.ok_or((StatusCode::UNAUTHORIZED, "Invalid API key".to_string()))?;
+
+    let new_api_key = Uuid::new_v4().to_string();
+
+    sqlx::query("UPDATE users SET api_key = ?1 WHERE username = ?2")
+        .bind(&new_api_key)
+        .bind(&username)
+        .execute(pool)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Database error: {}", e),
+            )
+        })?;
+
+    Ok(Json(RevokeKeyResponse {
+        username,
+        old_api_key: old_key,
+        new_api_key,
     }))
 }
