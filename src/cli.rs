@@ -1,7 +1,18 @@
 use clap::{Parser, Subcommand};
 use serde::{Deserialize, Serialize};
-use std::io::{self, Read, Write};
+use std::io::{self, IsTerminal, Read, Write};
 use std::path::PathBuf;
+use std::process;
+
+fn exit_with_help() -> ! {
+    eprintln!("Error: No input provided.");
+    eprintln!("\nPipe content to post a snippet, or use a subcommand:");
+    eprintln!("  echo 'code' | snip --desc 'note' --lang rust");
+    eprintln!("  snip --help    Show all commands");
+    eprintln!("  snip get <id>  Get a snippet");
+    eprintln!("  snip search    Search snippets");
+    process::exit(1);
+}
 
 #[derive(Parser)]
 #[command(name = "snip")]
@@ -269,12 +280,17 @@ async fn main() -> anyhow::Result<()> {
     let command = match args.command {
         Some(cmd) => cmd,
         None => {
-            // Check if stdin has content
+            // If stdin is a terminal (not piped), show help
+            if io::stdin().is_terminal() {
+                exit_with_help();
+            }
+
+            // Try to read piped content
             let mut stdin_content = String::new();
             if io::stdin().read_to_string(&mut stdin_content).is_ok()
                 && !stdin_content.trim().is_empty()
             {
-                // Use stdin content for post with top-level args
+                // Post the piped content
                 return post_snippet(
                     &client,
                     &server,
@@ -284,14 +300,10 @@ async fn main() -> anyhow::Result<()> {
                     &stdin_content,
                 )
                 .await;
-            } else {
-                eprintln!("Error: No input provided.");
-                eprintln!("\nPipe content to post a snippet, or use a subcommand:");
-                eprintln!("  snip --help    Show all commands");
-                eprintln!("  snip get <id>  Get a snippet");
-                eprintln!("  snip search    Search snippets");
-                std::process::exit(1);
             }
+
+            // Piped but empty
+            exit_with_help();
         }
     };
 
