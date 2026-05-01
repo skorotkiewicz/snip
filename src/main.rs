@@ -46,6 +46,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/snippets", post(create_snippet))
         .route("/api/snippets", get(list_snippets))
         .route("/api/snippets/{id}", delete(delete_snippet))
+        .route("/api/search", get(search_snippets))
         .route("/api/users/{username}/snippets", get(list_user_snippets))
         .layer(CorsLayer::permissive())
         .with_state(state);
@@ -61,7 +62,7 @@ async fn serve_index() -> Html<String> {
     Html(INDEX_HTML.to_string())
 }
 
-const INDEX_HTML: &str = r#"
+const INDEX_HTML: &str = r##"
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -285,6 +286,55 @@ const INDEX_HTML: &str = r#"
             padding: 2rem;
             color: #666;
         }
+        .search-box {
+            background: #fff;
+            border: 1px solid #ccc;
+            padding: 1rem;
+            margin-bottom: 1.5rem;
+        }
+        .search-box h3 {
+            font-size: 1rem;
+            margin-bottom: 0.75rem;
+            padding-bottom: 0.25rem;
+            border-bottom: 1px solid #ccc;
+        }
+        .search-form {
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+        }
+        .search-form input, .search-form select {
+            font-family: inherit;
+            padding: 0.25rem 0.5rem;
+            border: 1px solid #ccc;
+        }
+        .search-form input[type="text"] {
+            flex: 2;
+            min-width: 150px;
+        }
+        .search-form select {
+            flex: 1;
+            min-width: 100px;
+        }
+        .search-form button {
+            font-family: inherit;
+            padding: 0.25rem 0.75rem;
+            background: #333;
+            color: #fff;
+            border: none;
+            cursor: pointer;
+        }
+        .search-form button:hover {
+            background: #555;
+        }
+        .clear-search {
+            font-size: 0.875rem;
+            color: #666;
+            margin-top: 0.5rem;
+        }
+        .clear-search a {
+            color: #333;
+        }
     </style>
 </head>
 <body>
@@ -294,6 +344,45 @@ const INDEX_HTML: &str = r#"
         <div class="help" id="help-box">
             <p>$ echo "text" | snip --desc "note" --lang rust</p>
             <p style="margin-top: 0.5rem; color: #666;"># POST /api/register {username, password} to get API key</p>
+        </div>
+
+        <div class="search-box" id="search-box">
+            <h3>~ search</h3>
+            <div class="search-form">
+                <input type="text" id="search-input" placeholder="search in content or description...">
+                <select id="search-lang">
+                    <option value="all">all languages</option>
+                    <option value="plaintext">plaintext</option>
+                    <option value="bash">bash</option>
+                    <option value="c">c</option>
+                    <option value="cpp">cpp</option>
+                    <option value="csharp">csharp</option>
+                    <option value="css">css</option>
+                    <option value="go">go</option>
+                    <option value="html">html</option>
+                    <option value="java">java</option>
+                    <option value="javascript">javascript</option>
+                    <option value="json">json</option>
+                    <option value="kotlin">kotlin</option>
+                    <option value="lua">lua</option>
+                    <option value="markdown">markdown</option>
+                    <option value="php">php</option>
+                    <option value="python">python</option>
+                    <option value="ruby">ruby</option>
+                    <option value="rust">rust</option>
+                    <option value="scala">scala</option>
+                    <option value="shell">shell</option>
+                    <option value="sql">sql</option>
+                    <option value="swift">swift</option>
+                    <option value="typescript">typescript</option>
+                    <option value="yaml">yaml</option>
+                    <option value="zig">zig</option>
+                </select>
+                <button onclick="doSearch()">search</button>
+            </div>
+            <div class="clear-search" id="clear-search" style="display:none;">
+                <a href="#" onclick="clearSearch(); return false;">&lt; clear search</a>
+            </div>
         </div>
 
         <div class="auth-box" id="auth-box">
@@ -329,6 +418,8 @@ const INDEX_HTML: &str = r#"
         const ITEMS_PER_PAGE = 10;
         let currentPage = 1;
         let totalPages = 1;
+        let searchQuery = '';
+        let searchLang = 'all';
         
         // Parse URL to determine if we're viewing a user profile
         const pathParts = window.location.pathname.split('/');
@@ -336,9 +427,21 @@ const INDEX_HTML: &str = r#"
 
         async function loadSnippets(page = 1) {
             currentPage = page;
-            const url = profileUser 
-                ? `/api/users/${profileUser}/snippets?page=${page}&limit=${ITEMS_PER_PAGE}`
-                : `/api/snippets?page=${page}&limit=${ITEMS_PER_PAGE}`;
+            let url;
+            
+            if (searchQuery || (searchLang && searchLang !== 'all')) {
+                // Use search endpoint
+                const params = new URLSearchParams();
+                params.append('page', page);
+                params.append('limit', ITEMS_PER_PAGE);
+                if (searchQuery) params.append('q', searchQuery);
+                if (searchLang && searchLang !== 'all') params.append('lang', searchLang);
+                url = `/api/search?${params.toString()}`;
+            } else if (profileUser) {
+                url = `/api/users/${profileUser}/snippets?page=${page}&limit=${ITEMS_PER_PAGE}`;
+            } else {
+                url = `/api/snippets?page=${page}&limit=${ITEMS_PER_PAGE}`;
+            }
             
             try {
                 const response = await fetch(url);
@@ -353,6 +456,35 @@ const INDEX_HTML: &str = r#"
                     '<div class="empty">Error loading snippets</div>';
             }
         }
+        
+        function doSearch() {
+            searchQuery = document.getElementById('search-input').value.trim();
+            searchLang = document.getElementById('search-lang').value;
+            
+            if (!searchQuery && searchLang === 'all') {
+                clearSearch();
+                return;
+            }
+            
+            document.getElementById('clear-search').style.display = 'block';
+            currentPage = 1;
+            loadSnippets(1);
+        }
+        
+        function clearSearch() {
+            searchQuery = '';
+            searchLang = 'all';
+            document.getElementById('search-input').value = '';
+            document.getElementById('search-lang').value = 'all';
+            document.getElementById('clear-search').style.display = 'none';
+            currentPage = 1;
+            loadSnippets(1);
+        }
+        
+        // Allow Enter key to trigger search
+        document.getElementById('search-input').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') doSearch();
+        });
 
         function renderSnippets(snippets) {
             const container = document.getElementById('snippets');
@@ -546,4 +678,4 @@ const INDEX_HTML: &str = r#"
     </script>
 </body>
 </html>
-"#;
+"##;

@@ -271,6 +271,104 @@ pub async fn list_user_snippets(
     }))
 }
 
+pub async fn search_snippets(
+    State(state): State<AppState>,
+    Query(query): Query<SearchQuery>,
+) -> Result<Json<ListSnippetsResponse>, (StatusCode, String)> {
+    let pool = state.db.pool();
+
+    let page = query.page.max(1);
+    let limit = query.limit.clamp(1, 100);
+    let offset = (page - 1) * limit;
+
+    // Build the WHERE clause based on search parameters
+    let mut conditions = Vec::new();
+    let mut params: Vec<String> = Vec::new();
+
+    if let Some(search_term) = &query.q
+        && !search_term.is_empty()
+    {
+        let pattern = format!("%{}%", search_term);
+        conditions.push("(s.content LIKE ? OR s.description LIKE ?)".to_string());
+        params.push(pattern.clone());
+        params.push(pattern);
+    }
+
+    if let Some(lang) = &query.lang
+        && !lang.is_empty()
+        && lang != "all"
+    {
+        conditions.push("s.language = ?".to_string());
+        params.push(lang.to_lowercase());
+    }
+
+    let where_clause = if conditions.is_empty() {
+        ""
+    } else {
+        &format!("WHERE {}", conditions.join(" AND "))
+    };
+
+    // Build count query
+    let count_sql = format!(
+        "SELECT COUNT(*) FROM snippets s JOIN users u ON s.user_id = u.id {}",
+        where_clause
+    );
+
+    let mut count_query = sqlx::query_scalar(&count_sql);
+    for param in &params {
+        count_query = count_query.bind(param);
+    }
+
+    let total: i64 = count_query.fetch_one(pool).await.map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Database error: {}", e),
+        )
+    })?;
+
+    // Build data query
+    let data_sql = format!(
+        r#"
+        SELECT 
+            s.id,
+            s.content,
+            s.description,
+            s.language,
+            s.created_at,
+            u.username as author
+        FROM snippets s
+        JOIN users u ON s.user_id = u.id
+        {}
+        ORDER BY s.created_at DESC
+        LIMIT ? OFFSET ?
+        "#,
+        where_clause
+    );
+
+    let mut data_query = sqlx::query_as::<_, SnippetWithAuthor>(&data_sql);
+    for param in &params {
+        data_query = data_query.bind(param);
+    }
+    let rows: Vec<SnippetWithAuthor> = data_query
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(pool)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Database error: {}", e),
+            )
+        })?;
+
+    Ok(Json(ListSnippetsResponse {
+        snippets: rows,
+        total,
+        page,
+        limit,
+    }))
+}
+
 pub async fn login(
     State(state): State<AppState>,
     Json(req): Json<LoginRequest>,
@@ -402,18 +500,16 @@ pub async fn delete_snippet(
     let (user_id,) = user.ok_or((StatusCode::UNAUTHORIZED, "Invalid API key".to_string()))?;
 
     // Check if snippet exists and belongs to user
-    let snippet: Option<(i64,)> = sqlx::query_as(
-        "SELECT user_id FROM snippets WHERE id = ?1"
-    )
-    .bind(id)
-    .fetch_optional(pool)
-    .await
-    .map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Database error: {}", e),
-        )
-    })?;
+    let snippet: Option<(i64,)> = sqlx::query_as("SELECT user_id FROM snippets WHERE id = ?1")
+        .bind(id)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Database error: {}", e),
+            )
+        })?;
 
     if let Some((snippet_user_id,)) = snippet {
         if snippet_user_id != user_id {

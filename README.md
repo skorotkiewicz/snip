@@ -84,13 +84,22 @@ curl -X DELETE http://localhost:3000/api/snippets/123 \
 
 On the web UI, a `[x]` button appears next to your own snippets when logged in.
 
-### View Snippets
+### Search Snippets
 
-Open http://localhost:3000 or use the API:
+Search in content and description, filter by language:
 
 ```bash
-curl http://localhost:3000/api/snippets?page=1&limit=10
+# Search by keyword
+curl "http://localhost:3000/api/search?q=hello&page=1&limit=10"
+
+# Filter by language
+curl "http://localhost:3000/api/search?lang=rust&page=1&limit=10"
+
+# Combined search
+curl "http://localhost:3000/api/search?q=function&lang=javascript&page=1&limit=10"
 ```
+
+Web UI has a search box with language filter dropdown.
 
 ### User Profiles
 
@@ -115,6 +124,7 @@ curl http://localhost:3000/api/users/alice/snippets?page=1&limit=10
 | POST | `/api/snippets` | API Key | Create snippet |
 | DELETE | `/api/snippets/{id}` | API Key | Delete your own snippet |
 | GET | `/api/snippets` | - | List all snippets |
+| GET | `/api/search` | - | Search snippets by content/description/language |
 | GET | `/api/users/{username}/snippets` | - | List user snippets |
 | GET | `/` | - | Web frontend |
 | GET | `/u/{username}` | - | User profile page |

@@ -74,11 +74,33 @@ pub struct CreateSnippetRequest {
 impl CreateSnippetRequest {
     pub fn validate_language(lang: &Option<String>) -> Option<String> {
         const VALID_LANGS: &[&str] = &[
-            "plaintext", "bash", "c", "cpp", "csharp", "css", "go", "html", "java",
-            "javascript", "json", "kotlin", "lua", "markdown", "php", "python",
-            "ruby", "rust", "scala", "shell", "sql", "swift", "typescript", "yaml", "zig",
+            "plaintext",
+            "bash",
+            "c",
+            "cpp",
+            "csharp",
+            "css",
+            "go",
+            "html",
+            "java",
+            "javascript",
+            "json",
+            "kotlin",
+            "lua",
+            "markdown",
+            "php",
+            "python",
+            "ruby",
+            "rust",
+            "scala",
+            "shell",
+            "sql",
+            "swift",
+            "typescript",
+            "yaml",
+            "zig",
         ];
-        
+
         match lang {
             None => Some("plaintext".to_string()),
             Some(l) => {
@@ -108,6 +130,16 @@ pub struct PaginationQuery {
     pub page: i64,
     #[serde(default = "default_limit")]
     pub limit: i64,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SearchQuery {
+    #[serde(default = "default_page")]
+    pub page: i64,
+    #[serde(default = "default_limit")]
+    pub limit: i64,
+    pub q: Option<String>,
+    pub lang: Option<String>,
 }
 
 fn default_page() -> i64 {
