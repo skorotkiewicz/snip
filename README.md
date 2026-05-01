@@ -25,8 +25,8 @@ sudo systemctl enable --now snip
 
 **Docker**:
 ```bash
-# Run pre-built image from GitHub Container Registry
-# docker run -d -p 3000:3000 -v snip_data:/data ghcr.io/skorotkiewicz/snip:latest (not yet)
+# Run pre-built image
+docker run -d -p 3000:3000 -v snip_data:/data skorotkiewicz/snip:latest
 
 # Or build locally
 docker build -t snip .
@@ -39,8 +39,6 @@ docker-compose up -d
 **From source**:
 ```bash
 cargo install --path .
-# Or download from releases
-wget https://github.com/skorotkiewicz/snip/releases/latest/download/snip-x86_64-unknown-linux-gnu.tar.gz
 ```
 
 ### 2. Create Account
@@ -52,6 +50,9 @@ snip register myusername
 
 # Or login to existing account
 snip login myusername
+
+# Or login on demo server
+snip --server https://pb.sekor.eu.org login myusername
 ```
 
 Credentials are saved to `~/.config/snip/config.json`.
