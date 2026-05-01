@@ -50,14 +50,29 @@ Open http://localhost:3000 or use the API:
 curl http://localhost:3000/api/snippets?page=1&limit=10
 ```
 
+### User Profiles
+
+Click any username to view their profile, or visit directly:
+
+```
+http://localhost:3000/u/alice
+```
+
+API:
+```bash
+curl http://localhost:3000/api/users/alice/snippets?page=1&limit=10
+```
+
 ## API
 
 | Method | Endpoint | Auth | Description |
 |--------|----------|------|-------------|
 | POST | `/api/register` | - | Create account, returns API key |
 | POST | `/api/snippets` | API Key | Create snippet |
-| GET | `/api/snippets` | - | List snippets (paginated) |
+| GET | `/api/snippets` | - | List all snippets |
+| GET | `/api/users/{username}/snippets` | - | List user snippets |
 | GET | `/` | - | Web frontend |
+| GET | `/u/{username}` | - | User profile page |
 
 ## Architecture
 
