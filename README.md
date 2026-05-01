@@ -26,6 +26,7 @@ sudo systemctl enable --now snip
 **Docker**:
 ```bash
 # Run pre-built image
+docker pull skorotkiewicz/snip:latest # pull latest image
 docker run -d -p 3000:3000 -v snip_data:/data skorotkiewicz/snip:latest
 
 # Or build locally
