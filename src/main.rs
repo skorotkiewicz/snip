@@ -62,138 +62,107 @@ const INDEX_HTML: &str = r#"
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Snip - Code Snippets</title>
+    <title>snip</title>
     <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            padding: 2rem;
+            font-family: "Courier New", "Liberation Mono", monospace;
+            background: #f5f5f5;
+            color: #333;
+            line-height: 1.6;
+            padding: 2rem 1rem;
         }
         .container {
-            max-width: 900px;
+            max-width: 80ch;
             margin: 0 auto;
         }
         h1 {
-            color: white;
-            text-align: center;
-            margin-bottom: 2rem;
-            font-size: 2.5rem;
-            text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
-        }
-        .snippet {
-            background: white;
-            border-radius: 12px;
-            padding: 1.5rem;
-            margin-bottom: 1rem;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-            transition: transform 0.2s;
-        }
-        .snippet:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 12px rgba(0,0,0,0.15);
-        }
-        .snippet-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
+            font-size: 1.5rem;
             margin-bottom: 1rem;
             padding-bottom: 0.5rem;
-            border-bottom: 2px solid #e0e0e0;
+            border-bottom: 2px solid #333;
+        }
+        .help {
+            background: #fff;
+            border: 1px solid #ccc;
+            padding: 1rem;
+            margin-bottom: 1.5rem;
+        }
+        .help code {
+            background: #eee;
+            padding: 0.1rem 0.3rem;
+        }
+        .snippet {
+            background: #fff;
+            border: 1px solid #ccc;
+            margin-bottom: 1rem;
+        }
+        .snippet-header {
+            border-bottom: 1px solid #ccc;
+            padding: 0.5rem 1rem;
+            background: #fafafa;
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.875rem;
         }
         .snippet-desc {
-            font-weight: 600;
-            color: #333;
-            font-size: 1.1rem;
+            font-weight: bold;
         }
         .snippet-meta {
             color: #666;
-            font-size: 0.85rem;
         }
         .snippet-content {
-            background: #f8f9fa;
-            border-radius: 8px;
             padding: 1rem;
-            overflow-x: auto;
         }
         .snippet-content pre {
             margin: 0;
-            font-family: 'Fira Code', 'Monaco', 'Menlo', monospace;
-            font-size: 0.9rem;
-            line-height: 1.5;
-            color: #333;
+            font-family: inherit;
             white-space: pre-wrap;
             word-break: break-word;
+            overflow-x: auto;
         }
         .pagination {
             display: flex;
             justify-content: center;
-            gap: 0.5rem;
-            margin-top: 2rem;
+            align-items: center;
+            gap: 1rem;
+            margin-top: 1.5rem;
+            padding-top: 1rem;
+            border-top: 1px solid #ccc;
         }
         .pagination button {
-            background: white;
-            border: none;
-            padding: 0.75rem 1.5rem;
-            border-radius: 8px;
+            font-family: inherit;
+            padding: 0.25rem 0.75rem;
+            background: #fff;
+            border: 1px solid #333;
             cursor: pointer;
-            font-size: 1rem;
-            transition: all 0.2s;
         }
         .pagination button:hover:not(:disabled) {
-            background: #667eea;
-            color: white;
+            background: #333;
+            color: #fff;
         }
         .pagination button:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
+            opacity: 0.3;
+            cursor: default;
         }
-        .pagination span {
-            color: white;
-            align-self: center;
-            font-weight: 500;
-        }
-        .loading {
+        .loading, .empty {
             text-align: center;
-            color: white;
-            font-size: 1.2rem;
             padding: 2rem;
-        }
-        .empty {
-            text-align: center;
-            color: white;
-            font-size: 1.2rem;
-            padding: 3rem;
-            background: rgba(255,255,255,0.1);
-            border-radius: 12px;
-        }
-        .api-info {
-            background: rgba(255,255,255,0.95);
-            border-radius: 12px;
-            padding: 1.5rem;
-            margin-bottom: 2rem;
-            text-align: center;
-        }
-        .api-info code {
-            background: #e9ecef;
-            padding: 0.25rem 0.5rem;
-            border-radius: 4px;
-            font-family: monospace;
+            color: #666;
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>📋 Snip</h1>
+        <h1>snip ~ code snippets</h1>
         
-        <div class="api-info">
-            <p><strong>CLI Usage:</strong> <code>cat file.txt | snipped --desc "my snippet"</code></p>
-            <p style="margin-top: 0.5rem; color: #666;">Register at <code>POST /api/register</code> with <code>{"username": "...", "password": "..."}</code></p>
+        <div class="help">
+            <p>$ echo "text" | snipped --desc "note"</p>
+            <p style="margin-top: 0.5rem; color: #666;"># POST /api/register {username, password} to get API key</p>
         </div>
         
         <div id="snippets">
-            <div class="loading">Loading snippets...</div>
+            <div class="loading">loading...</div>
         </div>
         
         <div class="pagination" id="pagination"></div>
@@ -250,9 +219,9 @@ const INDEX_HTML: &str = r#"
             }
             
             container.innerHTML = `
-                <button ${currentPage === 1 ? 'disabled' : ''} onclick="loadSnippets(${currentPage - 1})">← Prev</button>
-                <span>Page ${currentPage} of ${totalPages}</span>
-                <button ${currentPage === totalPages ? 'disabled' : ''} onclick="loadSnippets(${currentPage + 1})">Next →</button>
+                <button ${currentPage === 1 ? 'disabled' : ''} onclick="loadSnippets(${currentPage - 1})">&lt; prev</button>
+                <span>${currentPage}/${totalPages}</span>
+                <button ${currentPage === totalPages ? 'disabled' : ''} onclick="loadSnippets(${currentPage + 1})">next &gt;</button>
             `;
         }
 
@@ -263,8 +232,8 @@ const INDEX_HTML: &str = r#"
         }
 
         function formatDate(dateStr) {
-            const date = new Date(dateStr);
-            return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+            const d = new Date(dateStr);
+            return d.toISOString().slice(0,16).replace('T',' ');
         }
 
         loadSnippets();
