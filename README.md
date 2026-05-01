@@ -1,292 +1,210 @@
 # Snip
 
-A minimal snippet sharing service with API, CLI, and web frontend.
+A minimal, self-hosted snippet sharing service. Share code snippets via web UI, CLI, or API.
+
+![Demo](https://raw.githubusercontent.com/skorotkiewicz/snip/main/demo.png)
+
+## Features
+
+- **Web UI** - Clean interface with syntax highlighting for 25+ languages
+- **CLI Tool** - Pipe snippets directly from terminal
+- **API** - RESTful API for integration
+- **Self-hosted** - Single binary + SQLite, no external dependencies
+- **Multi-platform** - Linux (x86_64, aarch64), macOS, Windows
 
 ## Quick Start
 
-### Local Build
+### 1. Install
 
-```bash
-# Build
-cargo build --release
-
-# Run server
-DATABASE_URL="sqlite:./snip.db" ./target/release/snipped
-
-# Open http://localhost:3000
-
-# Run client
-./target/release/snip --help
-```
-
-### Arch Linux
-
-Available in the AUR:
-
+**Arch Linux** (recommended):
 ```bash
 yay -S snip-rs
-# or
-paru -S snip-rs
-```
-
-```bash
-snip --help
-```
-
-Run own server (or use remote):
-```bash
+# Start the server
 sudo systemctl enable --now snip
 ```
 
-### Docker
-
+**Docker**:
 ```bash
-# Build and run with Docker Compose
-docker-compose up -d
-
-# Or build manually
-docker build -t snip .
-docker run -d -p 3000:3000 -v snip_data:/data snip
-# docker run -d -p 3000:3000 -v ./data:/data snip
+docker run -d -p 3000:3000 -v snip_data:/data ghcr.io/skorotkiewicz/snip
 ```
 
-### systemd (Manual)
+**From source**:
+```bash
+cargo install --path .
+# Or download from releases
+wget https://github.com/skorotkiewicz/snip/releases/latest/download/snip-x86_64-unknown-linux-gnu.tar.gz
+```
+
+### 2. Create Account
 
 ```bash
-# Copy binary and service file
-sudo cp target/release/snipped /usr/bin/
+# Register a new account
+snip register myusername
+# Enter password when prompted
+
+# Or login to existing account
+snip login myusername
+```
+
+Credentials are saved to `~/.config/snip/config.json`.
+
+### 3. Share Snippets
+
+```bash
+# Pipe any content directly
+echo 'console.log("hello")' | snip --desc "example" --lang javascript
+
+# Or from a file
+cat main.rs | snip --desc "main function" --lang rust
+
+# View the snippet
+snip get 42
+
+# Get a sharable link
+echo "Check this: http://localhost:3000/s/42"
+```
+
+## CLI Usage
+
+### Authentication
+
+```bash
+snip register <username>   # Create new account
+snip login <username>      # Login to existing
+snip whoami                # Show current user
+snip logout                # Clear saved credentials
+```
+
+### Post Snippets
+
+```bash
+# Basic usage (reads from stdin)
+echo "code here" | snip
+
+# With description and language
+cat script.py | snip --desc "My script" --lang python
+
+# Available languages: bash, c, cpp, css, go, html, java, javascript,
+# json, kotlin, lua, markdown, php, python, ruby, rust, scala,
+# shell, sql, swift, typescript, yaml, zig (and plaintext)
+```
+
+### Browse Snippets
+
+```bash
+snip get <id>              # View snippet by ID
+snip search "query"        # Search all snippets
+snip search "fn main" --lang rust   # Search with language filter
+snip delete <id>           # Delete your snippet
+```
+
+### Shell Completions
+
+```bash
+# Add to ~/.bashrc or ~/.zshrc
+eval "$(snip complete zsh)" 
+```
+
+**Available shells:** `bash`, `zsh`, `fish`, `elvish`, `powershell`
+
+## Web Interface
+
+Open `http://localhost:3000` to:
+- Browse all snippets
+- Filter by language
+- Search by content
+- View user profiles (`/u/username`)
+- Get raw content (`/raw/123`)
+
+## Server Configuration
+
+### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DATABASE_URL` | `sqlite:snip.db` | SQLite database path |
+| `SNIP_HOST` | `0.0.0.0` | Bind address |
+| `SNIP_PORT` | `3000` | Port number |
+
+### Systemd (Manual Install)
+
+```bash
+sudo cp snipped /usr/bin/
 sudo cp systemd/snip.service /etc/systemd/system/
-sudo cp systemd/snip.tmpfiles /usr/lib/tmpfiles.d/snip.conf
-
-# Create data directory
-sudo systemd-tmpfiles --create /usr/lib/tmpfiles.d/snip.conf
-
-# Enable and start service
 sudo systemctl daemon-reload
 sudo systemctl enable --now snip
-
-# Check status
-sudo systemctl status snip
 ```
 
-## Usage
+### Docker Compose
 
-### Register
+```yaml
+version: '3'
+services:
+  snip:
+    image: ghcr.io/skorotkiewicz/snip
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./data:/data
+    environment:
+      - DATABASE_URL=sqlite:/data/snipped.db
+```
+
+## API Reference
+
+All endpoints (except where noted) return JSON.
+
+### Authentication
 
 ```bash
-curl -X POST http://localhost:3000/api/register \
-  -H "Content-Type: application/json" \
-  -d '{"username": "alice", "password": "secret123"}'
-```
+# Register
+POST /api/register
+{"username": "alice", "password": "secret123"}
+→ {"id": 1, "username": "alice", "api_key": "xxx"}
 
-Response:
-```json
-{"id": 1, "username": "alice", "api_key": "..."}
-```
-
-### Login
-
-```bash
-curl -X POST http://localhost:3000/api/login \
-  -H "Content-Type: application/json" \
-  -d '{"username": "alice", "password": "secret123"}'
-```
-
-Response:
-```json
-{"username": "alice", "api_key": "..."}
-```
-
-### Revoke API Key
-
-Invalidate the current API key and generate a new one:
-
-```bash
-curl -X POST http://localhost:3000/api/revoke-key \
-  -H "X-API-Key: YOUR_OLD_API_KEY"
-```
-
-Response:
-```json
-{"username": "alice", "old_api_key": "...", "new_api_key": "..."}
-```
-
-### Post Snippet
-
-```bash
-# Using CLI
-echo "Hello World" | ./target/release/snip --desc "greeting" --lang javascript
-
-# Or pipe from file
-cat file.rs | ./target/release/snip --desc "my rust code" --lang rust
-
-# Or with curl
-curl -X POST http://localhost:3000/api/snippets \
-  -H "X-API-Key: YOUR_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"content": "Hello World", "description": "greeting", "language": "javascript"}'
-```
-
-**Limits:** Content max 5000 chars, Description max 255 chars.
-
-**Languages:** `plaintext` (default), `bash`, `c`, `cpp`, `csharp`, `css`, `go`, `html`, `java`, `javascript`, `json`, `kotlin`, `lua`, `markdown`, `php`, `python`, `ruby`, `rust`, `scala`, `shell`, `sql`, `swift`, `typescript`, `yaml`, `zig`
-
-### Get Snippet
-
-```bash
-# Get snippet by ID
-./target/release/snip get 123
-
-# Output includes metadata and full content
-```
-
-### Login / Register (CLI)
-
-The CLI can save credentials to `~/.config/snip/config.json`:
-
-```bash
 # Login
-./target/release/snip login myusername
-# (will prompt for password)
-
-# Register new account
-./target/release/snip register newusername
-# (will prompt for password)
-
-# Check who you are
-./target/release/snip whoami
-
-# Logout (clear credentials)
-./target/release/snip logout
+POST /api/login
+{"username": "alice", "password": "secret123"}
+→ {"username": "alice", "api_key": "xxx"}
 ```
 
-### Search Snippets
+### Snippets
 
 ```bash
-# Search all snippets
-./target/release/snip search "function"
+# Create (requires API key)
+POST /api/snippets -H "X-API-Key: xxx"
+{"content": "code", "description": "...", "language": "rust"}
 
-# Search with language filter
-./target/release/snip search "main" --lang rust
+# Get by ID
+GET /api/snippets/123
 
-# Limit results
-./target/release/snip search "hello" --lang python -n 5
+# Delete own snippet
+DELETE /api/snippets/123 -H "X-API-Key: xxx"
+
+# List all
+GET /api/snippets
+
+# Search
+GET /api/search?q=hello&lang=rust&limit=10
+
+# List user's snippets
+GET /api/users/alice/snippets
 ```
 
-### Delete Snippet
+### Pages
 
-Delete your own snippets (requires API key):
-
-**CLI:**
-```bash
-# Delete by ID (requires login or --api-key)
-./target/release/snip delete 123
-```
-
-**curl:**
-```bash
-curl -X DELETE http://localhost:3000/api/snippets/123 \
-  -H "X-API-Key: YOUR_API_KEY"
-```
-
-On the web UI, a `[x]` button appears next to your own snippets when logged in.
-
-### Search Snippets
-
-Search in content and description, filter by language:
-
-```bash
-# Search by keyword
-curl "http://localhost:3000/api/search?q=hello&page=1&limit=10"
-
-# Filter by language
-curl "http://localhost:3000/api/search?lang=rust&page=1&limit=10"
-
-# Combined search
-curl "http://localhost:3000/api/search?q=function&lang=javascript&page=1&limit=10"
-```
-
-Web UI has a search box with language filter dropdown.
-
-### View Single Snippet
-
-View a specific snippet by ID:
-
-```
-http://localhost:3000/s/123
-```
-
-API:
-```bash
-curl http://localhost:3000/api/snippets/123
-```
-
-Response:
-```json
-{"id": 123, "content": "...", "description": "...", "language": "rust", "created_at": "...", "author": "alice"}
-```
-
-### Raw Snippet Content
-
-Get raw snippet content (useful for piping or embedding):
-
-```bash
-curl http://localhost:3000/raw/123
-```
-
-Returns the raw content as `text/plain`:
-```
-console.log("hello world");
-```
-
-### User Profiles
-
-Click any username to view their profile, or visit directly:
-
-```
-http://localhost:3000/u/alice
-```
-
-API:
-```bash
-curl http://localhost:3000/api/users/alice/snippets?page=1&limit=10
-```
-
-## API
-
-| Method | Endpoint | Auth | Description |
-|--------|----------|------|-------------|
-| POST | `/api/register` | - | Create account, returns API key |
-| POST | `/api/login` | - | Login with password, returns API key |
-| POST | `/api/revoke-key` | API Key | Revoke old key, generate new API key |
-| POST | `/api/snippets` | API Key | Create snippet |
-| GET | `/api/snippets/{id}` | - | Get single snippet by ID |
-| DELETE | `/api/snippets/{id}` | API Key | Delete your own snippet |
-| GET | `/api/snippets` | - | List all snippets |
-| GET | `/api/search` | - | Search snippets by content/description/language |
-| GET | `/api/users/{username}/snippets` | - | List user snippets |
-| GET | `/` | - | Web frontend |
-| GET | `/s/{id}` | - | View single snippet page |
-| GET | `/raw/{id}` | - | Get raw snippet content (plain text) |
-| GET | `/u/{username}` | - | User profile page |
+- `GET /` - Web frontend
+- `GET /s/{id}` - View snippet page
+- `GET /raw/{id}` - Raw snippet content (text/plain)
+- `GET /u/{username}` - User profile
 
 ## Architecture
 
 - **Backend**: Axum (Rust) + SQLite
-- **Frontend**: Vanilla HTML/JS (embedded in binary)
-- **CLI**: Separate binary `snip`
+- **Frontend**: Vanilla HTML/JS (embedded in binary, no external assets)
+- **CLI**: Rust + clap + reqwest
+- **Syntax Highlighting**: highlight.js (CDN)
 
-Data persists in `snip.db` (SQLite).
+## License
 
-## Environment
-
-```bash
-# Custom database path
-DATABASE_URL=sqlite:/path/to/snip.db ./target/release/snipped
-
-# CLI environment variables
-SNIP_API_KEY=xxx SNIP_URL_SERVER=http://localhost:3000 ./target/release/snip
-
-# Or with flags
-SNIP_API_KEY=xxx ./target/release/snip --server http://localhost:3000
-```
+MIT
