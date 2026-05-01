@@ -341,8 +341,8 @@ const INDEX_HTML: &str = r##"
 </head>
 <body>
     <div class="container">
-        <h1><a href="/">snip</a><span id="header-suffix"> ~ code snippets</span></h1>
-        
+        <h1><a href="/">snip</a><span id="header-suffix"> ~ code snippets</span> <a href="#" id="auth-toggle" onclick="toggleAuth(); return false;" style="font-size: 0.875rem; font-weight: normal; float: right;">+auth</a></h1>
+
         <div class="help" id="help-box">
             <p>$ echo "text" | snip --desc "note" --lang rust</p>
             <p style="margin-top: 0.5rem; color: #666;"># POST /api/register {username, password} to get API key</p>
@@ -387,7 +387,7 @@ const INDEX_HTML: &str = r##"
             </div>
         </div>
 
-        <div class="auth-box" id="auth-box">
+        <div class="auth-box" id="auth-box" style="display:none;">
             <h3>~ auth</h3>
             <div id="login-form">
                 <div class="auth-form">
@@ -422,11 +422,11 @@ const INDEX_HTML: &str = r##"
                 </div>
             </div>
         </div>
-        
+
         <div id="snippets">
             <div class="loading">loading...</div>
         </div>
-        
+
         <div class="pagination" id="pagination"></div>
     </div>
 
@@ -436,7 +436,7 @@ const INDEX_HTML: &str = r##"
         let totalPages = 1;
         let searchQuery = '';
         let searchLang = 'all';
-        
+
         // Parse URL to determine view mode
         const pathParts = window.location.pathname.split('/');
         const profileUser = pathParts[1] === 'u' ? pathParts[2] : null;
@@ -444,7 +444,7 @@ const INDEX_HTML: &str = r##"
 
         async function loadSingleSnippet() {
             if (!singleSnippetId) return;
-            
+
             try {
                 const response = await fetch(`/api/snippets/${singleSnippetId}`);
                 if (response.ok) {
@@ -468,7 +468,7 @@ const INDEX_HTML: &str = r##"
         async function loadSnippets(page = 1) {
             currentPage = page;
             let url;
-            
+
             if (singleSnippetId) {
                 // Single snippet view - handled separately
                 return;
@@ -485,35 +485,35 @@ const INDEX_HTML: &str = r##"
             } else {
                 url = `/api/snippets?page=${page}&limit=${ITEMS_PER_PAGE}`;
             }
-            
+
             try {
                 const response = await fetch(url);
                 const data = await response.json();
-                
+
                 totalPages = Math.ceil(data.total / ITEMS_PER_PAGE) || 1;
-                
+
                 renderSnippets(data.snippets);
                 renderPagination();
             } catch (error) {
-                document.getElementById('snippets').innerHTML = 
+                document.getElementById('snippets').innerHTML =
                     '<div class="empty">Error loading snippets</div>';
             }
         }
-        
+
         function doSearch() {
             searchQuery = document.getElementById('search-input').value.trim();
             searchLang = document.getElementById('search-lang').value;
-            
+
             if (!searchQuery && searchLang === 'all') {
                 clearSearch();
                 return;
             }
-            
+
             document.getElementById('clear-search').style.display = 'block';
             currentPage = 1;
             loadSnippets(1);
         }
-        
+
         function clearSearch() {
             searchQuery = '';
             searchLang = 'all';
@@ -523,7 +523,7 @@ const INDEX_HTML: &str = r##"
             currentPage = 1;
             loadSnippets(1);
         }
-        
+
         // Allow Enter key to trigger search
         document.getElementById('search-input').addEventListener('keypress', function(e) {
             if (e.key === 'Enter') doSearch();
@@ -531,15 +531,15 @@ const INDEX_HTML: &str = r##"
 
         function renderSnippets(snippets) {
             const container = document.getElementById('snippets');
-            
+
             if (snippets.length === 0) {
                 container.innerHTML = '<div class="empty">No snippets yet.</div>';
                 return;
             }
-            
+
             const currentUser = localStorage.getItem('snip_username');
             const apiKey = localStorage.getItem('snip_api_key');
-            
+
             container.innerHTML = snippets.map(s => {
                 const authorLink = profileUser
                     ? escapeHtml(s.author)
@@ -558,28 +558,28 @@ const INDEX_HTML: &str = r##"
                     <div class="snippet-meta">${authorLink} · <a href="/s/${s.id}">${formatDate(s.created_at)}</a>${deleteBtn}</div>
                 </div>
             `}).join('');
-            
+
             // Apply syntax highlighting
             container.querySelectorAll('pre code').forEach((block) => {
                 hljs.highlightElement(block);
             });
         }
-        
+
         async function deleteSnippet(id) {
             if (!confirm('Delete this snippet?')) return;
-            
+
             const apiKey = localStorage.getItem('snip_api_key');
             if (!apiKey) {
                 alert('Not authenticated');
                 return;
             }
-            
+
             try {
                 const response = await fetch(`/api/snippets/${id}`, {
                     method: 'DELETE',
                     headers: { 'X-API-Key': apiKey }
                 });
-                
+
                 if (response.ok) {
                     document.getElementById(`snippet-${id}`).remove();
                 } else if (response.status === 403) {
@@ -594,12 +594,12 @@ const INDEX_HTML: &str = r##"
 
         function renderPagination() {
             const container = document.getElementById('pagination');
-            
+
             if (totalPages <= 1) {
                 container.innerHTML = '';
                 return;
             }
-            
+
             container.innerHTML = `
                 <button ${currentPage === 1 ? 'disabled' : ''} onclick="loadSnippets(${currentPage - 1})">&lt; prev</button>
                 <span>${currentPage}/${totalPages}</span>
@@ -617,11 +617,11 @@ const INDEX_HTML: &str = r##"
             const d = new Date(dateStr);
             return d.toISOString().slice(0,16).replace('T',' ');
         }
-        
+
         // Update UI for profile view
         if (profileUser) {
             document.getElementById('header-suffix').textContent = ` ~ ${profileUser}`;
-            document.getElementById('help-box').innerHTML = 
+            document.getElementById('help-box').innerHTML =
                 `<p><a href="/">&lt; back to all snippets</a></p>`;
         }
 
@@ -630,19 +630,19 @@ const INDEX_HTML: &str = r##"
             const username = document.getElementById('login-user').value;
             const password = document.getElementById('login-pass').value;
             const msgDiv = document.getElementById('login-msg');
-            
+
             if (!username || !password) {
                 msgDiv.innerHTML = '<div class="error-msg">enter username and password</div>';
                 return;
             }
-            
+
             try {
                 const response = await fetch('/api/login', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ username, password })
                 });
-                
+
                 if (response.ok) {
                     const data = await response.json();
                     localStorage.setItem('snip_api_key', data.api_key);
@@ -657,53 +657,53 @@ const INDEX_HTML: &str = r##"
                 msgDiv.innerHTML = '<div class="error-msg">login failed</div>';
             }
         }
-        
+
         function showRegister() {
             document.getElementById('login-form').style.display = 'none';
             document.getElementById('register-form').style.display = 'block';
             document.getElementById('login-msg').innerHTML = '';
         }
-        
+
         function showLogin() {
             document.getElementById('register-form').style.display = 'none';
             document.getElementById('login-form').style.display = 'block';
             document.getElementById('register-msg').innerHTML = '';
         }
-        
+
         async function doRegister() {
             const username = document.getElementById('register-user').value;
             const password = document.getElementById('register-pass').value;
             const msgDiv = document.getElementById('register-msg');
-            
+
             if (!username || !password) {
                 msgDiv.innerHTML = '<div class="error-msg">enter username and password</div>';
                 return;
             }
-            
+
             if (username.length < 3 || username.length > 32) {
                 msgDiv.innerHTML = '<div class="error-msg">username must be 3-32 characters</div>';
                 return;
             }
-            
+
             if (password.length < 6) {
                 msgDiv.innerHTML = '<div class="error-msg">password must be at least 6 characters</div>';
                 return;
             }
-            
+
             try {
                 const response = await fetch('/api/register', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ username, password })
                 });
-                
+
                 if (response.ok) {
                     const data = await response.json();
                     localStorage.setItem('snip_api_key', data.api_key);
                     localStorage.setItem('snip_username', data.username);
                     showApiKey(data.api_key);
                     msgDiv.innerHTML = '<div class="success-msg">registration successful</div>';
-                    
+
                     // Clear register form
                     document.getElementById('register-user').value = '';
                     document.getElementById('register-pass').value = '';
@@ -717,21 +717,21 @@ const INDEX_HTML: &str = r##"
                 msgDiv.innerHTML = '<div class="error-msg">registration failed</div>';
             }
         }
-        
+
         async function doRevoke() {
             const apiKey = localStorage.getItem('snip_api_key');
             const msgDiv = document.getElementById('revoke-msg');
-            
+
             if (!apiKey) return;
-            
+
             if (!confirm('Are you sure? This will invalidate your old API key.')) return;
-            
+
             try {
                 const response = await fetch('/api/revoke-key', {
                     method: 'POST',
                     headers: { 'X-API-Key': apiKey }
                 });
-                
+
                 if (response.ok) {
                     const data = await response.json();
                     localStorage.setItem('snip_api_key', data.new_api_key);
@@ -745,13 +745,15 @@ const INDEX_HTML: &str = r##"
                 msgDiv.innerHTML = '<div class="error-msg">revoke failed</div>';
             }
         }
-        
+
         function doLogout() {
             localStorage.removeItem('snip_api_key');
             localStorage.removeItem('snip_username');
             document.getElementById('login-form').style.display = 'block';
             document.getElementById('register-form').style.display = 'none';
             document.getElementById('api-key-box').style.display = 'none';
+            document.getElementById('auth-box').style.display = 'none';
+            document.getElementById('auth-toggle').textContent = '+auth';
             document.getElementById('login-user').value = '';
             document.getElementById('login-pass').value = '';
             document.getElementById('register-user').value = '';
@@ -760,13 +762,28 @@ const INDEX_HTML: &str = r##"
             document.getElementById('register-msg').innerHTML = '';
             document.getElementById('revoke-msg').innerHTML = '';
         }
-        
+
+        function toggleAuth() {
+            const authBox = document.getElementById('auth-box');
+            const toggleLink = document.getElementById('auth-toggle');
+            if (authBox.style.display === 'none') {
+                authBox.style.display = 'block';
+                toggleLink.textContent = '-auth';
+            } else {
+                authBox.style.display = 'none';
+                toggleLink.textContent = '+auth';
+            }
+        }
+
         function showApiKey(key) {
             document.getElementById('login-form').style.display = 'none';
+            document.getElementById('register-form').style.display = 'none';
             document.getElementById('api-key-box').style.display = 'block';
+            document.getElementById('auth-box').style.display = 'block';
+            document.getElementById('auth-toggle').textContent = '-auth';
             document.getElementById('api-key-value').textContent = key;
         }
-        
+
         function copyApiKey() {
             const key = document.getElementById('api-key-value').textContent;
             navigator.clipboard.writeText(key).then(() => {
@@ -774,11 +791,16 @@ const INDEX_HTML: &str = r##"
                 msgDiv.innerHTML = '<div class="success-msg">copied to clipboard</div>';
             });
         }
-        
-        // Check for existing session
+
+        // Check for existing session (stay logged in but auth box stays hidden)
         const savedKey = localStorage.getItem('snip_api_key');
-        if (savedKey) {
-            showApiKey(savedKey);
+        const savedUser = localStorage.getItem('snip_username');
+        if (savedKey && savedUser) {
+            // User is logged in, show API key in the hidden auth box
+            document.getElementById('api-key-value').textContent = savedKey;
+            document.getElementById('login-form').style.display = 'none';
+            document.getElementById('register-form').style.display = 'none';
+            document.getElementById('api-key-box').style.display = 'block';
         }
 
         // Load appropriate view

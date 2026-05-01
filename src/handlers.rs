@@ -175,7 +175,7 @@ pub async fn list_snippets(
 
     let rows: Vec<SnippetWithAuthor> = sqlx::query_as(
         r#"
-        SELECT 
+        SELECT
             s.id,
             s.content,
             s.description,
@@ -237,7 +237,7 @@ pub async fn list_user_snippets(
 
     let rows: Vec<SnippetWithAuthor> = sqlx::query_as(
         r#"
-        SELECT 
+        SELECT
             s.id,
             s.content,
             s.description,
@@ -279,7 +279,7 @@ pub async fn get_snippet(
 
     let snippet: Option<SnippetWithAuthor> = sqlx::query_as(
         r#"
-        SELECT 
+        SELECT
             s.id,
             s.content,
             s.description,
@@ -365,7 +365,7 @@ pub async fn search_snippets(
     // Build data query
     let data_sql = format!(
         r#"
-        SELECT 
+        SELECT
             s.id,
             s.content,
             s.description,
