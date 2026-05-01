@@ -30,23 +30,11 @@ jobs:
           targets: ${{ matrix.target }}
 
       - if: matrix.target == 'aarch64-unknown-linux-gnu'
-        # run: |
-        #   sudo apt-get update
-        #   sudo apt-get install -y gcc-aarch64-linux-gnu
-        #   # Download and cross-compile OpenSSL for aarch64
-        #   wget https://www.openssl.org/source/openssl-3.3.0.tar.gz
-        #   tar xzf openssl-3.3.0.tar.gz
-        #   cd openssl-3.3.0
-        #   ./Configure linux-aarch64 --prefix=/opt/openssl-aarch64 --cross-compile-prefix=aarch64-linux-gnu- no-shared
-        #   make -j$(nproc)
-        #   sudo make install
-        #   cd ..
         run: sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu
 
       - run: cargo build --release --locked --target ${{ matrix.target }}
         env:
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
-          # OPENSSL_DIR: /opt/openssl-aarch64
 
 
       - name: Package (Unix)
@@ -122,41 +110,41 @@ jobs:
           files: artifacts/*
           generate_release_notes: true
 
-  # aur-publish:
-  #   name: Publish to AUR
-  #   needs: release
-  #   if: startsWith(github.ref, 'refs/tags/')
-  #   runs-on: ubuntu-latest
-  #   container:
-  #     image: archlinux:base-devel
+  aur-publish:
+    name: Publish to AUR
+    needs: release
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:base-devel
 
-  #   steps:
-  #     - uses: actions/checkout@v4
+    steps:
+      - uses: actions/checkout@v4
 
-  #     - name: Setup builder user
-  #       run: |
-  #         pacman -Syu --noconfirm
-  #         pacman -S --noconfirm git openssh pacman-contrib sudo
-  #         useradd -m builder
-  #         echo "builder ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
-  #         chown -R builder:builder "$GITHUB_WORKSPACE"
+      - name: Setup builder user
+        run: |
+          pacman -Syu --noconfirm
+          pacman -S --noconfirm git openssh pacman-contrib sudo
+          useradd -m builder
+          echo "builder ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+          chown -R builder:builder "$GITHUB_WORKSPACE"
 
-  #     - name: Update PKGBUILD and generate .SRCINFO
-  #       run: |
-  #         VERSION=${GITHUB_REF#refs/tags/v}
-  #         sed -i "s/^pkgver=.*/pkgver=$VERSION/" arch/PKGBUILD
-  #         sed -i 's/^pkgrel=.*/pkgrel=1/' arch/PKGBUILD
-  #         sudo -u builder bash -lc 'cd arch && updpkgsums && makepkg --printsrcinfo > .SRCINFO'
+      - name: Update PKGBUILD and generate .SRCINFO
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          sed -i "s/^pkgver=.*/pkgver=$VERSION/" arch/PKGBUILD
+          sed -i 's/^pkgrel=.*/pkgrel=1/' arch/PKGBUILD
+          sudo -u builder bash -lc 'cd arch && updpkgsums && makepkg --printsrcinfo > .SRCINFO'
 
-  #     - name: Publish AUR package
-  #       uses: KSXGitHub/github-actions-deploy-aur@v4.1.2
-  #       with:
-  #         pkgname: snip
-  #         pkgbuild: ./arch/PKGBUILD
-  #         assets: |
-  #           ./arch/.SRCINFO
-  #         commit_username: ${{ secrets.AUR_USERNAME }}
-  #         commit_email: ${{ secrets.AUR_EMAIL }}
-  #         ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
-  #         commit_message: "aur: ${{ github.ref_name }}"
-  #         ssh_keyscan_types: rsa,ecdsa,ed25519
+      - name: Publish AUR package
+        uses: KSXGitHub/github-actions-deploy-aur@v4.1.2
+        with:
+          pkgname: snip-rs
+          pkgbuild: ./arch/PKGBUILD
+          assets: |
+            ./arch/.SRCINFO
+          commit_username: ${{ secrets.AUR_USERNAME }}
+          commit_email: ${{ secrets.AUR_EMAIL }}
+          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          commit_message: "aur: ${{ github.ref_name }}"
+          ssh_keyscan_types: rsa,ecdsa,ed25519

@@ -11,7 +11,7 @@ A minimal snippet sharing service with API, CLI, and web frontend.
 cargo build --release
 
 # Run server
-./target/release/snipped
+DATABASE_URL="sqlite:./snip.db" ./target/release/snipped
 
 # Open http://localhost:3000
 ```
