@@ -70,7 +70,11 @@ async fn main() -> anyhow::Result<()> {
         if let Some(desc) = snippet["description"].as_str() {
             println!("Description: {}", desc);
         }
-        println!("View at: {}/", args.server);
+        println!(
+            "View at: {}/s/{}",
+            args.server,
+            snippet["id"].as_i64().unwrap_or(0)
+        );
     } else {
         let status = response.status();
         let error_text = response.text().await.unwrap_or_default();

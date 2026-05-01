@@ -395,7 +395,21 @@ const INDEX_HTML: &str = r##"
                     <input type="password" id="login-pass" placeholder="password">
                     <button onclick="doLogin()">login</button>
                 </div>
+                <div style="margin-top: 0.5rem; font-size: 0.875rem;">
+                    <a href="#" onclick="showRegister(); return false;" id="show-register-link">register</a>
+                </div>
                 <div id="login-msg"></div>
+            </div>
+            <div id="register-form" style="display:none;">
+                <div class="auth-form">
+                    <input type="text" id="register-user" placeholder="username (3-32 chars)">
+                    <input type="password" id="register-pass" placeholder="password (6+ chars)">
+                    <button onclick="doRegister()">register</button>
+                </div>
+                <div style="margin-top: 0.5rem; font-size: 0.875rem;">
+                    <a href="#" onclick="showLogin(); return false;">&lt; back to login</a>
+                </div>
+                <div id="register-msg"></div>
             </div>
             <div id="api-key-box" style="display:none;">
                 <div class="api-key-display">
@@ -644,6 +658,66 @@ const INDEX_HTML: &str = r##"
             }
         }
         
+        function showRegister() {
+            document.getElementById('login-form').style.display = 'none';
+            document.getElementById('register-form').style.display = 'block';
+            document.getElementById('login-msg').innerHTML = '';
+        }
+        
+        function showLogin() {
+            document.getElementById('register-form').style.display = 'none';
+            document.getElementById('login-form').style.display = 'block';
+            document.getElementById('register-msg').innerHTML = '';
+        }
+        
+        async function doRegister() {
+            const username = document.getElementById('register-user').value;
+            const password = document.getElementById('register-pass').value;
+            const msgDiv = document.getElementById('register-msg');
+            
+            if (!username || !password) {
+                msgDiv.innerHTML = '<div class="error-msg">enter username and password</div>';
+                return;
+            }
+            
+            if (username.length < 3 || username.length > 32) {
+                msgDiv.innerHTML = '<div class="error-msg">username must be 3-32 characters</div>';
+                return;
+            }
+            
+            if (password.length < 6) {
+                msgDiv.innerHTML = '<div class="error-msg">password must be at least 6 characters</div>';
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/register', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    localStorage.setItem('snip_api_key', data.api_key);
+                    localStorage.setItem('snip_username', data.username);
+                    showApiKey(data.api_key);
+                    msgDiv.innerHTML = '<div class="success-msg">registration successful</div>';
+                    
+                    // Clear register form
+                    document.getElementById('register-user').value = '';
+                    document.getElementById('register-pass').value = '';
+                } else if (response.status === 409) {
+                    msgDiv.innerHTML = '<div class="error-msg">username already exists</div>';
+                } else {
+                    const error = await response.text();
+                    msgDiv.innerHTML = `<div class="error-msg">${escapeHtml(error)}</div>`;
+                }
+            } catch (e) {
+                msgDiv.innerHTML = '<div class="error-msg">registration failed</div>';
+            }
+        }
+        
         async function doRevoke() {
             const apiKey = localStorage.getItem('snip_api_key');
             const msgDiv = document.getElementById('revoke-msg');
@@ -676,10 +750,14 @@ const INDEX_HTML: &str = r##"
             localStorage.removeItem('snip_api_key');
             localStorage.removeItem('snip_username');
             document.getElementById('login-form').style.display = 'block';
+            document.getElementById('register-form').style.display = 'none';
             document.getElementById('api-key-box').style.display = 'none';
             document.getElementById('login-user').value = '';
             document.getElementById('login-pass').value = '';
+            document.getElementById('register-user').value = '';
+            document.getElementById('register-pass').value = '';
             document.getElementById('login-msg').innerHTML = '';
+            document.getElementById('register-msg').innerHTML = '';
             document.getElementById('revoke-msg').innerHTML = '';
         }
         
