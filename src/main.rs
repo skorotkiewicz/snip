@@ -341,14 +341,14 @@ const INDEX_HTML: &str = r##"
 </head>
 <body>
     <div class="container">
-        <h1><a href="/">snip</a><span id="header-suffix"> ~ code snippets</span> <a href="#" id="auth-toggle" onclick="toggleAuth(); return false;" style="font-size: 0.875rem; font-weight: normal; float: right;">+auth</a></h1>
+        <h1><a href="/">snip</a><span id="header-suffix"> ~ code snippets</span> <span style="font-size: 0.875rem; font-weight: normal; float: right;"><a href="#" id="search-toggle" onclick="toggleSearch(); return false;">+search</a> <a href="#" id="auth-toggle" onclick="toggleAuth(); return false;">+auth</a></span></h1>
 
         <div class="help" id="help-box">
             <p>$ echo "text" | snip --desc "note" --lang rust</p>
             <p style="margin-top: 0.5rem; color: #666;"># POST /api/register {username, password} to get API key</p>
         </div>
 
-        <div class="search-box" id="search-box">
+        <div class="search-box" id="search-box" style="display:none;">
             <h3>~ search</h3>
             <div class="search-form">
                 <input type="text" id="search-input" placeholder="search in content or description...">
@@ -622,7 +622,7 @@ const INDEX_HTML: &str = r##"
         if (profileUser) {
             document.getElementById('header-suffix').textContent = ` ~ ${profileUser}`;
             document.getElementById('help-box').innerHTML =
-                `<p><a href="/">&lt; back to all snippets</a></p>`;
+                `<p><a href="/" style="color: #333;">&lt; back to all snippets</a></p>`;
         }
 
         // Auth functions
@@ -761,6 +761,18 @@ const INDEX_HTML: &str = r##"
             document.getElementById('login-msg').innerHTML = '';
             document.getElementById('register-msg').innerHTML = '';
             document.getElementById('revoke-msg').innerHTML = '';
+        }
+
+        function toggleSearch() {
+            const searchBox = document.getElementById('search-box');
+            const toggleLink = document.getElementById('search-toggle');
+            if (searchBox.style.display === 'none') {
+                searchBox.style.display = 'block';
+                toggleLink.textContent = '-search';
+            } else {
+                searchBox.style.display = 'none';
+                toggleLink.textContent = '+search';
+            }
         }
 
         function toggleAuth() {
