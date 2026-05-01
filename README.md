@@ -155,6 +155,13 @@ The CLI can save credentials to `~/.config/snip/config.json`:
 
 Delete your own snippets (requires API key):
 
+**CLI:**
+```bash
+# Delete by ID (requires login or --api-key)
+./target/release/snip delete 123
+```
+
+**curl:**
 ```bash
 curl -X DELETE http://localhost:3000/api/snippets/123 \
   -H "X-API-Key: YOUR_API_KEY"

@@ -81,6 +81,12 @@ enum Command {
 
     /// Show current user info
     Whoami,
+
+    /// Delete a snippet by ID
+    Delete {
+        /// Snippet ID
+        id: i64,
+    },
 }
 
 #[derive(Serialize, Deserialize, Debug, Default)]
@@ -279,22 +285,11 @@ async fn main() -> anyhow::Result<()> {
                 )
                 .await;
             } else {
-                // Show help
-                eprintln!("Usage: snip [OPTIONS] <COMMAND>");
-                eprintln!("\nCommands:");
-                eprintln!("  post       Post a snippet (pipe content via stdin)");
-                eprintln!("  get        Get a snippet by ID");
-                eprintln!("  search     Search snippets");
-                eprintln!("  login      Login with username/password");
-                eprintln!("  register   Register new account");
-                eprintln!("  logout     Clear saved credentials");
-                eprintln!("  whoami     Show current user info");
-                eprintln!("\nExamples:");
-                eprintln!("  echo 'code' | snip --desc 'note' --lang rust");
-                eprintln!("  echo 'code' | snip post --desc 'note' --lang rust");
-                eprintln!("  snip login myuser");
-                eprintln!("  snip get 123");
-                eprintln!("  snip search 'function' --lang python");
+                eprintln!("Error: No input provided.");
+                eprintln!("\nPipe content to post a snippet, or use a subcommand:");
+                eprintln!("  snip --help    Show all commands");
+                eprintln!("  snip get <id>  Get a snippet");
+                eprintln!("  snip search    Search snippets");
                 std::process::exit(1);
             }
         }
@@ -406,6 +401,28 @@ async fn main() -> anyhow::Result<()> {
                             .ceil() as i64
                     );
                 }
+            } else {
+                eprintln!("Error: {}", response.status());
+                std::process::exit(1);
+            }
+            Ok(())
+        }
+
+        Command::Delete { id } => {
+            let response = client
+                .delete(format!("{}/api/snippets/{}", server, id))
+                .header("X-API-Key", api_key)
+                .send()
+                .await?;
+
+            if response.status().is_success() {
+                println!("Snippet {} deleted successfully", id);
+            } else if response.status() == 404 {
+                eprintln!("Snippet {} not found", id);
+                std::process::exit(1);
+            } else if response.status() == 403 {
+                eprintln!("Not authorized to delete snippet {}", id);
+                std::process::exit(1);
             } else {
                 eprintln!("Error: {}", response.status());
                 std::process::exit(1);
