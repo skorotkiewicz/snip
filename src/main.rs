@@ -68,6 +68,29 @@ const INDEX_HTML: &str = r#"
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>snip</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/bash.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/c.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/cpp.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/csharp.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/css.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/go.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/java.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/javascript.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/json.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/kotlin.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/lua.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/php.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/python.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/ruby.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/rust.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/scala.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/sql.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/swift.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/typescript.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/yaml.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/zig.min.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -346,19 +369,25 @@ const INDEX_HTML: &str = r#"
                 const authorLink = profileUser
                     ? escapeHtml(s.author)
                     : `<a href="/u/${escapeHtml(s.author)}">${escapeHtml(s.author)}</a>`;
-                const langTag = s.language ? `<span class="snippet-lang">${escapeHtml(s.language)}</span>` : '';
+                const langTag = s.language && s.language !== 'plaintext' ? `<span class="snippet-lang">${escapeHtml(s.language)}</span>` : '';
                 const descHtml = s.description ? `<div class="snippet-desc">${escapeHtml(s.description)}${langTag}</div>` : langTag ? `<div class="snippet-desc">${langTag}</div>` : '';
                 const isOwner = apiKey && s.author === currentUser;
                 const deleteBtn = isOwner ? ` <button class="delete-btn" onclick="deleteSnippet(${s.id})">[x]</button>` : '';
+                const langClass = s.language && s.language !== 'plaintext' ? ` class="language-${s.language}"` : '';
                 return `
                 <div class="snippet" id="snippet-${s.id}">
                     ${descHtml}
                     <div class="snippet-content">
-                        <pre>${escapeHtml(s.content)}</pre>
+                        <pre><code${langClass}>${escapeHtml(s.content)}</code></pre>
                     </div>
                     <div class="snippet-meta">${authorLink} · ${formatDate(s.created_at)}${deleteBtn}</div>
                 </div>
             `}).join('');
+            
+            // Apply syntax highlighting
+            container.querySelectorAll('pre code').forEach((block) => {
+                hljs.highlightElement(block);
+            });
         }
         
         async function deleteSnippet(id) {

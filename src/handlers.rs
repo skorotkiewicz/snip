@@ -117,6 +117,13 @@ pub async fn create_snippet(
         ));
     }
 
+    // Validate language
+    let validated_lang = CreateSnippetRequest::validate_language(&req.language)
+        .ok_or((
+            StatusCode::BAD_REQUEST,
+            "Invalid language. Valid: plaintext, bash, c, cpp, csharp, css, go, html, java, javascript, json, kotlin, lua, markdown, php, python, ruby, rust, scala, shell, sql, swift, typescript, yaml, zig".to_string(),
+        ))?;
+
     let result: Result<(i64, chrono::DateTime<chrono::Utc>), sqlx::Error> = sqlx::query_as(
         r#"
         INSERT INTO snippets (user_id, content, description, language)
@@ -127,7 +134,7 @@ pub async fn create_snippet(
     .bind(user_id)
     .bind(&req.content)
     .bind(&req.description)
-    .bind(&req.language)
+    .bind(&validated_lang)
     .fetch_one(pool)
     .await;
 
@@ -136,7 +143,7 @@ pub async fn create_snippet(
             id,
             content: req.content,
             description: req.description,
-            language: req.language,
+            language: Some(validated_lang),
             created_at,
         })),
         Err(e) => Err((

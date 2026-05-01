@@ -69,7 +69,9 @@ curl -X POST http://localhost:3000/api/snippets \
   -d '{"content": "Hello World", "description": "greeting", "language": "javascript"}'
 ```
 
-**Limits:** Content max 5000 chars, Description max 255 chars, Language optional.
+**Limits:** Content max 5000 chars, Description max 255 chars.
+
+**Languages:** `plaintext` (default), `bash`, `c`, `cpp`, `csharp`, `css`, `go`, `html`, `java`, `javascript`, `json`, `kotlin`, `lua`, `markdown`, `php`, `python`, `ruby`, `rust`, `scala`, `shell`, `sql`, `swift`, `typescript`, `yaml`, `zig`
 
 ### Delete Snippet
 

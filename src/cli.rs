@@ -8,7 +8,11 @@ struct Args {
     #[arg(short, long, help = "Description of the snippet")]
     desc: Option<String>,
 
-    #[arg(short, long, help = "Language of the snippet (e.g., javascript, rust)")]
+    #[arg(
+        short,
+        long,
+        help = "Language (plaintext,bash,c,cpp,csharp,css,go,html,java,javascript,json,kotlin,lua,markdown,php,python,ruby,rust,scala,shell,sql,swift,typescript,yaml,zig)"
+    )]
     lang: Option<String>,
 
     #[arg(short, long, help = "API key (or set SNIP_API_KEY env var)")]

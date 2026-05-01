@@ -71,6 +71,28 @@ pub struct CreateSnippetRequest {
     pub language: Option<String>,
 }
 
+impl CreateSnippetRequest {
+    pub fn validate_language(lang: &Option<String>) -> Option<String> {
+        const VALID_LANGS: &[&str] = &[
+            "plaintext", "bash", "c", "cpp", "csharp", "css", "go", "html", "java",
+            "javascript", "json", "kotlin", "lua", "markdown", "php", "python",
+            "ruby", "rust", "scala", "shell", "sql", "swift", "typescript", "yaml", "zig",
+        ];
+        
+        match lang {
+            None => Some("plaintext".to_string()),
+            Some(l) => {
+                let normalized = l.to_lowercase();
+                if VALID_LANGS.contains(&normalized.as_str()) {
+                    Some(normalized)
+                } else {
+                    None
+                }
+            }
+        }
+    }
+}
+
 #[derive(Debug, Serialize)]
 pub struct CreateSnippetResponse {
     pub id: i64,
