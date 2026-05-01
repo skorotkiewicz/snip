@@ -1,7 +1,7 @@
 use axum::{
     Router,
     response::Html,
-    routing::{get, post},
+    routing::{delete, get, post},
 };
 use sqlx::sqlite::SqlitePoolOptions;
 use tower_http::cors::CorsLayer;
@@ -45,6 +45,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/revoke-key", post(revoke_api_key))
         .route("/api/snippets", post(create_snippet))
         .route("/api/snippets", get(list_snippets))
+        .route("/api/snippets/{id}", delete(delete_snippet))
         .route("/api/users/{username}/snippets", get(list_user_snippets))
         .layer(CorsLayer::permissive())
         .with_state(state);
@@ -210,6 +211,20 @@ const INDEX_HTML: &str = r#"
         .snippet-meta a:hover {
             text-decoration: underline;
         }
+        .delete-btn {
+            font-family: inherit;
+            font-size: 0.875rem;
+            background: none;
+            border: none;
+            color: #c00;
+            cursor: pointer;
+            padding: 0;
+            margin-left: 0.5rem;
+        }
+        .delete-btn:hover {
+            color: #f00;
+            text-decoration: underline;
+        }
         .pagination {
             display: flex;
             justify-content: center;
@@ -316,20 +331,52 @@ const INDEX_HTML: &str = r#"
                 return;
             }
             
+            const currentUser = localStorage.getItem('snip_username');
+            const apiKey = localStorage.getItem('snip_api_key');
+            
             container.innerHTML = snippets.map(s => {
                 const authorLink = profileUser
                     ? escapeHtml(s.author)
                     : `<a href="/u/${escapeHtml(s.author)}">${escapeHtml(s.author)}</a>`;
                 const descHtml = s.description ? `<div class="snippet-desc">${escapeHtml(s.description)}</div>` : '';
+                const isOwner = apiKey && s.author === currentUser;
+                const deleteBtn = isOwner ? ` <button class="delete-btn" onclick="deleteSnippet(${s.id})">[x]</button>` : '';
                 return `
-                <div class="snippet">
+                <div class="snippet" id="snippet-${s.id}">
                     ${descHtml}
                     <div class="snippet-content">
                         <pre>${escapeHtml(s.content)}</pre>
                     </div>
-                    <div class="snippet-meta">${authorLink} · ${formatDate(s.created_at)}</div>
+                    <div class="snippet-meta">${authorLink} · ${formatDate(s.created_at)}${deleteBtn}</div>
                 </div>
             `}).join('');
+        }
+        
+        async function deleteSnippet(id) {
+            if (!confirm('Delete this snippet?')) return;
+            
+            const apiKey = localStorage.getItem('snip_api_key');
+            if (!apiKey) {
+                alert('Not authenticated');
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/snippets/${id}`, {
+                    method: 'DELETE',
+                    headers: { 'X-API-Key': apiKey }
+                });
+                
+                if (response.ok) {
+                    document.getElementById(`snippet-${id}`).remove();
+                } else if (response.status === 403) {
+                    alert('Can only delete your own snippets');
+                } else {
+                    alert('Failed to delete');
+                }
+            } catch (e) {
+                alert('Error deleting snippet');
+            }
         }
 
         function renderPagination() {

@@ -360,3 +360,73 @@ pub async fn revoke_api_key(
         new_api_key,
     }))
 }
+
+pub async fn delete_snippet(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    axum::extract::Path(id): axum::extract::Path<i64>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    let pool = state.db.pool();
+
+    let api_key = headers
+        .get("x-api-key")
+        .and_then(|v| v.to_str().ok())
+        .ok_or((
+            StatusCode::UNAUTHORIZED,
+            "Missing X-API-Key header".to_string(),
+        ))?;
+
+    // Get user id from API key
+    let user: Option<(i64,)> = sqlx::query_as("SELECT id FROM users WHERE api_key = ?1")
+        .bind(api_key)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Database error: {}", e),
+            )
+        })?;
+
+    let (user_id,) = user.ok_or((StatusCode::UNAUTHORIZED, "Invalid API key".to_string()))?;
+
+    // Check if snippet exists and belongs to user
+    let snippet: Option<(i64,)> = sqlx::query_as(
+        "SELECT user_id FROM snippets WHERE id = ?1"
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await
+    .map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Database error: {}", e),
+        )
+    })?;
+
+    if let Some((snippet_user_id,)) = snippet {
+        if snippet_user_id != user_id {
+            return Err((
+                StatusCode::FORBIDDEN,
+                "Can only delete your own snippets".to_string(),
+            ));
+        }
+    } else {
+        return Err((StatusCode::NOT_FOUND, "Snippet not found".to_string()));
+    }
+
+    // Delete the snippet
+    sqlx::query("DELETE FROM snippets WHERE id = ?1 AND user_id = ?2")
+        .bind(id)
+        .bind(user_id)
+        .execute(pool)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Database error: {}", e),
+            )
+        })?;
+
+    Ok(StatusCode::NO_CONTENT)
+}

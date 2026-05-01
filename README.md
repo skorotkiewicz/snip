@@ -71,6 +71,17 @@ curl -X POST http://localhost:3000/api/snippets \
 
 **Limits:** Content max 5000 chars, Description max 255 chars.
 
+### Delete Snippet
+
+Delete your own snippets (requires API key):
+
+```bash
+curl -X DELETE http://localhost:3000/api/snippets/123 \
+  -H "X-API-Key: YOUR_API_KEY"
+```
+
+On the web UI, a `[x]` button appears next to your own snippets when logged in.
+
 ### View Snippets
 
 Open http://localhost:3000 or use the API:
@@ -100,6 +111,7 @@ curl http://localhost:3000/api/users/alice/snippets?page=1&limit=10
 | POST | `/api/login` | - | Login with password, returns API key |
 | POST | `/api/revoke-key` | API Key | Revoke old key, generate new API key |
 | POST | `/api/snippets` | API Key | Create snippet |
+| DELETE | `/api/snippets/{id}` | API Key | Delete your own snippet |
 | GET | `/api/snippets` | - | List all snippets |
 | GET | `/api/users/{username}/snippets` | - | List user snippets |
 | GET | `/` | - | Web frontend |
