@@ -14,6 +14,28 @@ cargo build --release
 DATABASE_URL="sqlite:./snip.db" ./target/release/snipped
 
 # Open http://localhost:3000
+
+# Run client
+./target/release/snip --help
+```
+
+### Arch Linux
+
+Available in the AUR:
+
+```bash
+yay -S snip-rs
+# or
+paru -S snip-rs
+```
+
+```bash
+snip --help
+```
+
+Run own server (or use remote):
+```bash
+sudo systemctl enable --now snip
 ```
 
 ### Docker
@@ -28,7 +50,7 @@ docker run -d -p 3000:3000 -v snip_data:/data snip
 # docker run -d -p 3000:3000 -v ./data:/data snip
 ```
 
-### systemd
+### systemd (Manual)
 
 ```bash
 # Copy binary and service file

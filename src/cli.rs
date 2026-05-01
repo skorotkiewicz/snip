@@ -34,6 +34,13 @@ struct Args {
     )]
     lang: Option<String>,
 
+    #[arg(
+        short,
+        long,
+        help = "Config file path (or set SNIP_CONFIG env var, default: ~/.config/snip/config.json)"
+    )]
+    config: Option<PathBuf>,
+
     #[command(subcommand)]
     command: Option<Command>,
 }
@@ -111,35 +118,32 @@ struct Config {
 }
 
 impl Config {
-    fn path() -> PathBuf {
+    fn default_path() -> PathBuf {
         let home = dirs::home_dir().expect("Could not find home directory");
         home.join(".config").join("snip").join("config.json")
     }
 
-    fn load() -> Option<Self> {
-        let path = Self::path();
+    fn load(path: &PathBuf) -> Option<Self> {
         if path.exists() {
-            let content = std::fs::read_to_string(&path).ok()?;
+            let content = std::fs::read_to_string(path).ok()?;
             serde_json::from_str(&content).ok()
         } else {
             None
         }
     }
 
-    fn save(&self) -> anyhow::Result<()> {
-        let path = Self::path();
+    fn save(&self, path: &PathBuf) -> anyhow::Result<()> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
         let content = serde_json::to_string_pretty(self)?;
-        std::fs::write(&path, content)?;
+        std::fs::write(path, content)?;
         Ok(())
     }
 
-    fn clear() -> anyhow::Result<()> {
-        let path = Self::path();
+    fn clear(path: &PathBuf) -> anyhow::Result<()> {
         if path.exists() {
-            std::fs::remove_file(&path)?;
+            std::fs::remove_file(path)?;
         }
         Ok(())
     }
@@ -157,8 +161,15 @@ fn prompt_password(prompt: &str) -> String {
 async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
 
+    // Determine config path: --config flag > SNIP_CONFIG env > default
+    let config_path = args
+        .config
+        .clone()
+        .or_else(|| std::env::var("SNIP_CONFIG").map(PathBuf::from).ok())
+        .unwrap_or_else(Config::default_path);
+
     // Load config if exists
-    let config = Config::load();
+    let config = Config::load(&config_path);
 
     // Determine server URL
     let server = args
@@ -192,10 +203,10 @@ async fn main() -> anyhow::Result<()> {
                     api_key,
                     username: username.clone(),
                 };
-                config.save()?;
+                config.save(&config_path)?;
 
                 println!("Logged in as: {}", username);
-                println!("Credentials saved to ~/.config/snip/config.json");
+                println!("Credentials saved to {}", config_path.display());
             } else {
                 eprintln!(
                     "Login failed: {}",
@@ -228,10 +239,10 @@ async fn main() -> anyhow::Result<()> {
                     api_key,
                     username: username.clone(),
                 };
-                config.save()?;
+                config.save(&config_path)?;
 
                 println!("Registered and logged in as: {}", username);
-                println!("Credentials saved to ~/.config/snip/config.json");
+                println!("Credentials saved to {}", config_path.display());
             } else if response.status() == 409 {
                 eprintln!("Username already exists");
                 std::process::exit(1);
@@ -246,8 +257,11 @@ async fn main() -> anyhow::Result<()> {
         }
 
         Some(Command::Logout) => {
-            Config::clear()?;
-            println!("Logged out. Credentials cleared.");
+            Config::clear(&config_path)?;
+            println!(
+                "Logged out. Credentials cleared from {}.",
+                config_path.display()
+            );
             return Ok(());
         }
 
