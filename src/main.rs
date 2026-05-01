@@ -873,8 +873,6 @@ const INDEX_HTML: &str = r##"
         // Update UI for profile view
         if (profileUser) {
             document.getElementById('header-suffix').textContent = ` ~ ${profileUser}`;
-            document.getElementById('help-box').innerHTML =
-                `<p><a href="/" style="color: #333;">&lt; back to all snippets</a></p>`;
         }
 
         // Auth functions
