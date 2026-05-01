@@ -573,6 +573,84 @@ pub async fn revoke_api_key(
     }))
 }
 
+pub async fn change_password(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(req): Json<ChangePasswordRequest>,
+) -> Result<Json<ChangePasswordResponse>, (StatusCode, String)> {
+    let pool = state.db.pool();
+
+    let api_key = headers
+        .get("x-api-key")
+        .and_then(|v| v.to_str().ok())
+        .ok_or((
+            StatusCode::UNAUTHORIZED,
+            "Missing X-API-Key header".to_string(),
+        ))?;
+
+    // Get user info
+    let user: Option<(String, String)> =
+        sqlx::query_as("SELECT username, password_hash FROM users WHERE api_key = ?1")
+            .bind(api_key)
+            .fetch_optional(pool)
+            .await
+            .map_err(|e| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("Database error: {}", e),
+                )
+            })?;
+
+    let (username, password_hash) =
+        user.ok_or((StatusCode::UNAUTHORIZED, "Invalid API key".to_string()))?;
+
+    // Verify old password
+    let valid = verify(&req.old_password, &password_hash).map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Password verification error: {}", e),
+        )
+    })?;
+
+    if !valid {
+        return Err((StatusCode::UNAUTHORIZED, "Invalid old password".to_string()));
+    }
+
+    // Validate new password
+    if req.new_password.len() < 6 {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "New password must be at least 6 characters".to_string(),
+        ));
+    }
+
+    // Hash new password
+    let new_password_hash = hash(&req.new_password, DEFAULT_COST).map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Hash error: {}", e),
+        )
+    })?;
+
+    // Update password
+    sqlx::query("UPDATE users SET password_hash = ?1 WHERE username = ?2")
+        .bind(&new_password_hash)
+        .bind(&username)
+        .execute(pool)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Database error: {}", e),
+            )
+        })?;
+
+    Ok(Json(ChangePasswordResponse {
+        username,
+        message: "Password changed successfully".to_string(),
+    }))
+}
+
 pub async fn delete_snippet(
     State(state): State<AppState>,
     headers: HeaderMap,

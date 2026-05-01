@@ -141,6 +141,14 @@ enum Command {
     /// Show current user info
     Whoami,
 
+    /// Change password
+    ChangePassword {
+        /// Old password (will prompt if not provided)
+        old_password: Option<String>,
+        /// New password (will prompt if not provided)
+        new_password: Option<String>,
+    },
+
     /// Delete a snippet by ID
     Delete {
         /// Snippet ID
@@ -502,6 +510,40 @@ async fn main() -> anyhow::Result<()> {
                             .ceil() as i64
                     );
                 }
+            } else {
+                eprintln!("Error: {}", response.status());
+                std::process::exit(1);
+            }
+            Ok(())
+        }
+
+        Command::ChangePassword {
+            old_password,
+            new_password,
+        } => {
+            let old_password = old_password.unwrap_or_else(|| prompt_password("Old password: "));
+            let new_password = new_password.unwrap_or_else(|| prompt_password("New password: "));
+
+            let response = client
+                .post(format!("{}/api/change-password", server))
+                .header("X-API-Key", api_key)
+                .header("Content-Type", "application/json")
+                .json(&serde_json::json!({
+                    "old_password": old_password,
+                    "new_password": new_password
+                }))
+                .send()
+                .await?;
+
+            if response.status().is_success() {
+                println!("Password changed successfully");
+            } else if response.status() == 401 {
+                eprintln!("Invalid old password or not authenticated");
+                std::process::exit(1);
+            } else if response.status() == 400 {
+                let error_text = response.text().await.unwrap_or_default();
+                eprintln!("Error: {}", error_text);
+                std::process::exit(1);
             } else {
                 eprintln!("Error: {}", response.status());
                 std::process::exit(1);

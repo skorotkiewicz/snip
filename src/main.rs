@@ -74,6 +74,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/register", post(register_user))
         .route("/api/login", post(login))
         .route("/api/revoke-key", post(revoke_api_key))
+        .route("/api/change-password", post(change_password))
         .route("/api/snippets", post(create_snippet))
         .route("/api/snippets", get(list_snippets))
         .route("/api/snippets/{id}", get(get_snippet))
@@ -481,8 +482,18 @@ const INDEX_HTML: &str = r##"
                     <pre id="api-key-value"></pre>
                     <button onclick="copyApiKey()">copy</button>
                     <button onclick="doRevoke()" style="margin-left: 0.5rem;">revoke & regenerate</button>
+                    <button onclick="showChangePassword()" style="margin-left: 0.5rem;">change password</button>
                     <button onclick="doLogout()" style="margin-left: 0.5rem;">logout</button>
                     <div id="revoke-msg"></div>
+                </div>
+                <div id="change-password-form" style="display:none; margin-top: 1rem;">
+                    <div class="auth-form">
+                        <input type="password" id="old-password" placeholder="old password">
+                        <input type="password" id="new-password" placeholder="new password (6+ chars)">
+                        <button onclick="doChangePassword()">change</button>
+                        <button onclick="hideChangePassword()" style="background: #fff; color: #333; border: 1px solid #333;">cancel</button>
+                    </div>
+                    <div id="change-password-msg"></div>
                 </div>
             </div>
         </div>
@@ -903,6 +914,59 @@ const INDEX_HTML: &str = r##"
             document.getElementById('login-msg').innerHTML = '';
             document.getElementById('register-msg').innerHTML = '';
             document.getElementById('revoke-msg').innerHTML = '';
+            hideChangePassword();
+        }
+
+        function showChangePassword() {
+            document.getElementById('change-password-form').style.display = 'block';
+            document.getElementById('change-password-msg').innerHTML = '';
+        }
+
+        function hideChangePassword() {
+            document.getElementById('change-password-form').style.display = 'none';
+            document.getElementById('old-password').value = '';
+            document.getElementById('new-password').value = '';
+            document.getElementById('change-password-msg').innerHTML = '';
+        }
+
+        async function doChangePassword() {
+            const apiKey = localStorage.getItem('snip_api_key');
+            const oldPass = document.getElementById('old-password').value;
+            const newPass = document.getElementById('new-password').value;
+            const msgDiv = document.getElementById('change-password-msg');
+
+            if (!oldPass || !newPass) {
+                msgDiv.innerHTML = '<div class="error-msg">enter both old and new passwords</div>';
+                return;
+            }
+
+            if (newPass.length < 6) {
+                msgDiv.innerHTML = '<div class="error-msg">new password must be at least 6 characters</div>';
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/change-password', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-API-Key': apiKey
+                    },
+                    body: JSON.stringify({ old_password: oldPass, new_password: newPass })
+                });
+
+                if (response.ok) {
+                    msgDiv.innerHTML = '<div class="success-msg">password changed successfully</div>';
+                    setTimeout(hideChangePassword, 2000);
+                } else if (response.status === 401) {
+                    msgDiv.innerHTML = '<div class="error-msg">invalid old password</div>';
+                } else {
+                    const error = await response.text();
+                    msgDiv.innerHTML = `<div class="error-msg">${escapeHtml(error)}</div>`;
+                }
+            } catch (e) {
+                msgDiv.innerHTML = '<div class="error-msg">failed to change password</div>';
+            }
         }
 
         function toggleSearch() {

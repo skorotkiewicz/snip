@@ -44,6 +44,18 @@ pub struct RevokeKeyResponse {
     pub new_api_key: String,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct ChangePasswordRequest {
+    pub old_password: String,
+    pub new_password: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ChangePasswordResponse {
+    pub username: String,
+    pub message: String,
+}
+
 #[derive(Debug, Serialize)]
 #[allow(dead_code)]
 pub struct Snippet {
