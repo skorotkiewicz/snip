@@ -109,7 +109,7 @@ const INDEX_HTML: &str = r##"
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>snip</title>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
+    <link id="hljs-theme" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/bash.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/c.min.js"></script>
@@ -201,7 +201,7 @@ const INDEX_HTML: &str = r##"
             text-decoration: underline;
         }
         .help {
-            background: var(--container-bg);
+            background: var(--bg-color);
             border: 1px solid var(--border-color);
             padding: 1rem;
             margin-bottom: 1.5rem;
@@ -1095,14 +1095,17 @@ const INDEX_HTML: &str = r##"
             if (savedTheme === 'dark') {
                 document.documentElement.setAttribute('data-theme', 'dark');
                 updateThemeIcon(true);
+                updateHljsTheme(true);
             } else if (savedTheme === 'light') {
                 document.documentElement.setAttribute('data-theme', 'light');
                 updateThemeIcon(false);
+                updateHljsTheme(false);
             } else {
                 // Check system preference
                 if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
                     document.documentElement.setAttribute('data-theme', 'dark');
                     updateThemeIcon(true);
+                    updateHljsTheme(true);
                 }
             }
         }
@@ -1113,6 +1116,13 @@ const INDEX_HTML: &str = r##"
             toggle.title = isDark ? 'Switch to light mode' : 'Switch to dark mode';
         }
 
+        function updateHljsTheme(isDark) {
+            const themeLink = document.getElementById('hljs-theme');
+            const lightTheme = 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css';
+            const darkTheme = 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css';
+            themeLink.href = isDark ? darkTheme : lightTheme;
+        }
+
         function toggleTheme() {
             const currentTheme = document.documentElement.getAttribute('data-theme');
             const isDark = currentTheme === 'dark';
@@ -1121,10 +1131,12 @@ const INDEX_HTML: &str = r##"
                 document.documentElement.setAttribute('data-theme', 'light');
                 localStorage.setItem('snip_theme', 'light');
                 updateThemeIcon(false);
+                updateHljsTheme(false);
             } else {
                 document.documentElement.setAttribute('data-theme', 'dark');
                 localStorage.setItem('snip_theme', 'dark');
                 updateThemeIcon(true);
+                updateHljsTheme(true);
             }
         }
 
@@ -1140,9 +1152,11 @@ const INDEX_HTML: &str = r##"
                     if (e.matches) {
                         document.documentElement.setAttribute('data-theme', 'dark');
                         updateThemeIcon(true);
+                        updateHljsTheme(true);
                     } else {
                         document.documentElement.setAttribute('data-theme', 'light');
                         updateThemeIcon(false);
+                        updateHljsTheme(false);
                     }
                 }
             });
