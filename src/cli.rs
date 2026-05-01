@@ -14,6 +14,44 @@ fn exit_with_help() -> ! {
     process::exit(1);
 }
 
+fn format_time_ago(date_str: &str) -> String {
+    if date_str.is_empty() {
+        return "unknown".to_string();
+    }
+
+    // Parse ISO 8601 date
+    let Ok(created) = chrono::DateTime::parse_from_rfc3339(date_str) else {
+        return "unknown".to_string();
+    };
+
+    let now = chrono::Utc::now();
+    let duration = now.signed_duration_since(created.with_timezone(&chrono::Utc));
+
+    let seconds = duration.num_seconds();
+    let minutes = duration.num_minutes();
+    let hours = duration.num_hours();
+    let days = duration.num_days();
+    let weeks = days / 7;
+    let months = days / 30;
+    let years = days / 365;
+
+    if seconds < 60 {
+        "just now".to_string()
+    } else if minutes < 60 {
+        format!("{}m ago", minutes)
+    } else if hours < 24 {
+        format!("{}h ago", hours)
+    } else if days < 7 {
+        format!("{}d ago", days)
+    } else if weeks < 4 {
+        format!("{}w ago", weeks)
+    } else if months < 12 {
+        format!("{}mo ago", months)
+    } else {
+        format!("{}y ago", years)
+    }
+}
+
 #[derive(Parser)]
 #[command(name = "snip")]
 #[command(about = "CLI tool for snipped snippet server", version)]
@@ -64,6 +102,9 @@ enum Command {
     Get {
         /// Snippet ID
         id: i64,
+
+        #[arg(short, long, help = "Show only raw content (no metadata)")]
+        raw: bool,
     },
 
     /// Search snippets
@@ -350,40 +391,56 @@ async fn main() -> anyhow::Result<()> {
             post_snippet(&client, &server, &api_key, desc, lang, &content).await
         }
 
-        Command::Get { id } => {
-            let response = client
-                .get(format!("{}/api/snippets/{}", server, id))
-                .send()
-                .await?;
+        Command::Get { id, raw } => {
+            if raw {
+                // Use raw endpoint for just the content
+                let response = client.get(format!("{}/raw/{}", server, id)).send().await?;
 
-            if response.status().is_success() {
-                let snippet: serde_json::Value = response.json().await?;
-                println!("ID: {}", snippet["id"].as_i64().unwrap_or(0));
-                if let Some(desc) = snippet["description"].as_str() {
-                    println!("Description: {}", desc);
+                if response.status().is_success() {
+                    let content = response.text().await?;
+                    println!("{}", content);
+                } else if response.status() == 404 {
+                    eprintln!("Snippet not found");
+                    std::process::exit(1);
+                } else {
+                    eprintln!("Error: {}", response.status());
+                    std::process::exit(1);
                 }
-                if let Some(lang) = snippet["language"].as_str()
-                    && lang != "plaintext"
-                {
-                    println!("Language: {}", lang);
-                }
-                println!(
-                    "Author: {}",
-                    snippet["author"].as_str().unwrap_or("unknown")
-                );
-                let views = snippet["views"].as_i64().unwrap_or(0);
-                let stars = snippet["stars"].as_i64().unwrap_or(0);
-                println!("Views: {} | Stars: {}", views, stars);
-                println!("View: {}/s/{}", server, id);
-                println!("Raw: {}/raw/{}", server, id);
-                println!("---");
-                println!("{}", snippet["content"].as_str().unwrap_or(""));
-            } else if response.status() == 404 {
-                eprintln!("Snippet not found");
-                std::process::exit(1);
             } else {
-                eprintln!("Error: {}", response.status());
-                std::process::exit(1);
+                let response = client
+                    .get(format!("{}/api/snippets/{}", server, id))
+                    .send()
+                    .await?;
+
+                if response.status().is_success() {
+                    let snippet: serde_json::Value = response.json().await?;
+                    let id = snippet["id"].as_i64().unwrap_or(0);
+                    let desc = snippet["description"].as_str().unwrap_or("");
+                    let lang = snippet["language"].as_str().unwrap_or("plaintext");
+                    let author = snippet["author"].as_str().unwrap_or("unknown");
+                    let views = snippet["views"].as_i64().unwrap_or(0);
+                    let stars = snippet["stars"].as_i64().unwrap_or(0);
+
+                    // Format: #42 | example (javascript) | alice | 5 views | 3 stars
+                    let lang_part = if lang != "plaintext" && !lang.is_empty() {
+                        format!(" ({})", lang)
+                    } else {
+                        String::new()
+                    };
+                    let desc_part = if desc.is_empty() { "untitled" } else { desc };
+                    println!(
+                        "#{} | {}{} | {} | {} views | {} stars",
+                        id, desc_part, lang_part, author, views, stars
+                    );
+                    println!();
+                    println!("{}", snippet["content"].as_str().unwrap_or(""));
+                } else if response.status() == 404 {
+                    eprintln!("Snippet not found");
+                    std::process::exit(1);
+                } else {
+                    eprintln!("Error: {}", response.status());
+                    std::process::exit(1);
+                }
             }
             Ok(())
         }
@@ -409,36 +466,33 @@ async fn main() -> anyhow::Result<()> {
                 if snippets.is_empty() {
                     println!("No snippets found");
                 } else {
-                    for (i, s) in snippets.iter().enumerate() {
-                        if i > 0 {
-                            println!("\n---\n");
-                        }
+                    // Table format: id  desc  author  views  stars  time
+                    for s in snippets.iter() {
                         let id = s["id"].as_i64().unwrap_or(0);
+                        let desc = s["description"].as_str().unwrap_or("");
+                        let author = s["author"].as_str().unwrap_or("unknown");
                         let views = s["views"].as_i64().unwrap_or(0);
                         let stars = s["stars"].as_i64().unwrap_or(0);
-                        println!("ID: {} | {}/s/{}", id, server, id);
-                        if let Some(desc) = s["description"].as_str() {
-                            println!("Desc: {}", desc);
-                        }
-                        if let Some(lang) = s["language"].as_str()
-                            && lang != "plaintext"
-                        {
-                            println!("Lang: {}", lang);
-                        }
-                        println!("Author: {}", s["author"].as_str().unwrap_or("unknown"));
-                        println!("Views: {} | Stars: {}", views, stars);
-                        let preview: String = s["content"]
-                            .as_str()
-                            .unwrap_or("")
-                            .chars()
-                            .take(100)
-                            .collect();
-                        println!("{}", preview);
-                        if s["content"].as_str().unwrap_or("").len() > 100 {
-                            println!("... ({} chars)", s["content"].as_str().unwrap_or("").len());
-                        }
+                        let created_at = s["created_at"].as_str().unwrap_or("");
+
+                        // Format description (truncate if too long)
+                        let desc_fmt = if desc.is_empty() {
+                            "(no description)".to_string()
+                        } else if desc.len() > 30 {
+                            format!("{}...", &desc[..27])
+                        } else {
+                            desc.to_string()
+                        };
+
+                        // Parse relative time
+                        let time_ago = format_time_ago(created_at);
+
+                        println!(
+                            "#{:4}  {:30}  {:15}  {:1}v/*{:1}  {}",
+                            id, desc_fmt, author, views, stars, time_ago
+                        );
                     }
-                    println!("\n---");
+                    println!();
                     println!(
                         "Total: {} | Page: {}/{}",
                         data["total"].as_i64().unwrap_or(0),

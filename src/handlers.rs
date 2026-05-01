@@ -331,6 +331,18 @@ pub async fn get_raw_snippet(
 ) -> Result<axum::response::Response, (StatusCode, String)> {
     let pool = state.db.pool();
 
+    // Increment views
+    sqlx::query("UPDATE snippets SET views = views + 1 WHERE id = ?1")
+        .bind(id)
+        .execute(pool)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Database error: {}", e),
+            )
+        })?;
+
     let content: Option<(String,)> = sqlx::query_as("SELECT content FROM snippets WHERE id = ?1")
         .bind(id)
         .fetch_optional(pool)
