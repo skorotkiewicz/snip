@@ -39,9 +39,11 @@ async fn main() -> anyhow::Result<()> {
 
     let app = Router::new()
         .route("/", get(serve_index))
+        .route("/u/{username}", get(serve_index))
         .route("/api/register", post(register_user))
         .route("/api/snippets", post(create_snippet))
         .route("/api/snippets", get(list_snippets))
+        .route("/api/users/{username}/snippets", get(list_user_snippets))
         .layer(CorsLayer::permissive())
         .with_state(state);
 
@@ -82,6 +84,13 @@ const INDEX_HTML: &str = r#"
             padding-bottom: 0.5rem;
             border-bottom: 2px solid #333;
         }
+        h1 a {
+            color: inherit;
+            text-decoration: none;
+        }
+        h1 a:hover {
+            text-decoration: underline;
+        }
         .help {
             background: #fff;
             border: 1px solid #ccc;
@@ -111,8 +120,18 @@ const INDEX_HTML: &str = r#"
         .snippet-meta {
             color: #666;
         }
+        .snippet-meta a {
+            color: #333;
+            text-decoration: none;
+        }
+        .snippet-meta a:hover {
+            text-decoration: underline;
+        }
         .snippet-content {
-            padding: 1rem;
+            background: #f0f0f0;
+            border-left: 3px solid #666;
+            margin: 0.5rem 1rem 1rem 1rem;
+            padding: 0.75rem;
         }
         .snippet-content pre {
             margin: 0;
@@ -120,6 +139,7 @@ const INDEX_HTML: &str = r#"
             white-space: pre-wrap;
             word-break: break-word;
             overflow-x: auto;
+            color: #222;
         }
         .pagination {
             display: flex;
@@ -154,9 +174,9 @@ const INDEX_HTML: &str = r#"
 </head>
 <body>
     <div class="container">
-        <h1>snip ~ code snippets</h1>
+        <h1><a href="/">snip</a><span id="header-suffix"> ~ code snippets</span></h1>
         
-        <div class="help">
+        <div class="help" id="help-box">
             <p>$ echo "text" | snipped --desc "note"</p>
             <p style="margin-top: 0.5rem; color: #666;"># POST /api/register {username, password} to get API key</p>
         </div>
@@ -172,14 +192,22 @@ const INDEX_HTML: &str = r#"
         const ITEMS_PER_PAGE = 10;
         let currentPage = 1;
         let totalPages = 1;
+        
+        // Parse URL to determine if we're viewing a user profile
+        const pathParts = window.location.pathname.split('/');
+        const profileUser = pathParts[1] === 'u' ? pathParts[2] : null;
 
         async function loadSnippets(page = 1) {
+            currentPage = page;
+            const url = profileUser 
+                ? `/api/users/${profileUser}/snippets?page=${page}&limit=${ITEMS_PER_PAGE}`
+                : `/api/snippets?page=${page}&limit=${ITEMS_PER_PAGE}`;
+            
             try {
-                const response = await fetch(`/api/snippets?page=${page}&limit=${ITEMS_PER_PAGE}`);
+                const response = await fetch(url);
                 const data = await response.json();
                 
                 totalPages = Math.ceil(data.total / ITEMS_PER_PAGE) || 1;
-                currentPage = page;
                 
                 renderSnippets(data.snippets);
                 renderPagination();
@@ -193,21 +221,25 @@ const INDEX_HTML: &str = r#"
             const container = document.getElementById('snippets');
             
             if (snippets.length === 0) {
-                container.innerHTML = '<div class="empty">No snippets yet. Be the first to share!</div>';
+                container.innerHTML = '<div class="empty">No snippets yet.</div>';
                 return;
             }
             
-            container.innerHTML = snippets.map(s => `
+            container.innerHTML = snippets.map(s => {
+                const authorLink = profileUser 
+                    ? escapeHtml(s.author)
+                    : `<a href="/u/${escapeHtml(s.author)}">${escapeHtml(s.author)}</a>`;
+                return `
                 <div class="snippet">
                     <div class="snippet-header">
                         <span class="snippet-desc">${escapeHtml(s.description || 'Untitled')}</span>
-                        <span class="snippet-meta">${escapeHtml(s.author)} · ${formatDate(s.created_at)}</span>
+                        <span class="snippet-meta">${authorLink} · ${formatDate(s.created_at)}</span>
                     </div>
                     <div class="snippet-content">
                         <pre>${escapeHtml(s.content)}</pre>
                     </div>
                 </div>
-            `).join('');
+            `}).join('');
         }
 
         function renderPagination() {
@@ -234,6 +266,13 @@ const INDEX_HTML: &str = r#"
         function formatDate(dateStr) {
             const d = new Date(dateStr);
             return d.toISOString().slice(0,16).replace('T',' ');
+        }
+        
+        // Update UI for profile view
+        if (profileUser) {
+            document.getElementById('header-suffix').textContent = ` ~ ${profileUser}`;
+            document.getElementById('help-box').innerHTML = 
+                `<p><a href="/">&lt; back to all snippets</a></p>`;
         }
 
         loadSnippets();

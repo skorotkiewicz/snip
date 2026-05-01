@@ -182,3 +182,66 @@ pub async fn list_snippets(
         limit,
     }))
 }
+
+pub async fn list_user_snippets(
+    State(state): State<AppState>,
+    axum::extract::Path(username): axum::extract::Path<String>,
+    Query(query): Query<PaginationQuery>,
+) -> Result<Json<ListSnippetsResponse>, (StatusCode, String)> {
+    let pool = state.db.pool();
+
+    let page = query.page.max(1);
+    let limit = query.limit.clamp(1, 100);
+    let offset = (page - 1) * limit;
+
+    let total: i64 = sqlx::query_scalar(
+        r#"
+        SELECT COUNT(*) FROM snippets s
+        JOIN users u ON s.user_id = u.id
+        WHERE u.username = ?1
+        "#,
+    )
+    .bind(&username)
+    .fetch_one(pool)
+    .await
+    .map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Database error: {}", e),
+        )
+    })?;
+
+    let rows: Vec<SnippetWithAuthor> = sqlx::query_as(
+        r#"
+        SELECT 
+            s.id,
+            s.content,
+            s.description,
+            s.created_at,
+            u.username as author
+        FROM snippets s
+        JOIN users u ON s.user_id = u.id
+        WHERE u.username = ?1
+        ORDER BY s.created_at DESC
+        LIMIT ?2 OFFSET ?3
+        "#,
+    )
+    .bind(&username)
+    .bind(limit)
+    .bind(offset)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Database error: {}", e),
+        )
+    })?;
+
+    Ok(Json(ListSnippetsResponse {
+        snippets: rows,
+        total,
+        page,
+        limit,
+    }))
+}
