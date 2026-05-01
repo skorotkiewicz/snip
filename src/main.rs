@@ -408,8 +408,8 @@ const INDEX_HTML: &str = r##"
         <h1><a href="/">snip</a><span id="header-suffix"> ~ code snippets</span> <span style="font-size: 0.875rem; font-weight: normal; float: right;"><a href="#" id="search-toggle" onclick="toggleSearch(); return false;">+search</a> <a href="#" id="auth-toggle" onclick="toggleAuth(); return false;">+auth</a></span></h1>
 
         <div class="help" id="help-box">
-            <p>$ echo "text" | snip --desc "note" --lang rust</p>
-            <p style="margin-top: 0.5rem; color: #666;"># POST /api/register {username, password} to get API key</p>
+            <p>$ <strong>echo</strong> <span style="color: #888">"text"</span> | <strong>snip</strong> <em>--desc</em> <span style="color: #888">"note"</span> <em>--lang</em> <span style="color: #888">rust</span></p>
+            <p style="font-size: 12px; margin-top: 0.5rem; color: #666;"># POST /api/register {username, password} to get API key</p>
         </div>
 
         <div class="search-box" id="search-box" style="display:none;">
