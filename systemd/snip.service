@@ -13,12 +13,14 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/var/lib/snipped
-WorkingDirectory=/var/lib/snipped
+ReadWritePaths=/var/lib/snip
+WorkingDirectory=/var/lib/snip
 
 # Environment
 Environment="RUST_LOG=info"
-Environment="DATABASE_URL=sqlite:/var/lib/snipped/snipped.db"
+Environment="DATABASE_URL=sqlite:/var/lib/snip/snipped.db"
+Environment="SNIP_HOST=0.0.0.0"
+Environment="SNIP_PORT=3000"
 
 [Install]
 WantedBy=multi-user.target

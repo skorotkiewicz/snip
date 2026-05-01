@@ -19,12 +19,25 @@ struct AppState {
     db: Database,
 }
 
+const VERSION: &str = env!("CARGO_PKG_VERSION");
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // Handle version flag
+    let args: Vec<String> = std::env::args().collect();
+    if args.len() == 2 && (args[1] == "-V" || args[1] == "--version") {
+        println!("snipped {}", VERSION);
+        return Ok(());
+    }
+
     fmt::init();
 
     let database_url =
         std::env::var("DATABASE_URL").unwrap_or_else(|_| "sqlite:snip.db".to_string());
+
+    let host = std::env::var("SNIP_HOST").unwrap_or_else(|_| "0.0.0.0".to_string());
+    let port = std::env::var("SNIP_PORT").unwrap_or_else(|_| "3000".to_string());
+    let bind_addr = format!("{}:{}", host, port);
 
     let pool = SqlitePoolOptions::new()
         .max_connections(5)
@@ -54,8 +67,8 @@ async fn main() -> anyhow::Result<()> {
         .layer(CorsLayer::permissive())
         .with_state(state);
 
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await?;
-    tracing::info!("Server running on http://localhost:3000");
+    let listener = tokio::net::TcpListener::bind(&bind_addr).await?;
+    tracing::info!("Server running on http://{}:{}", host, port);
     axum::serve(listener, app).await?;
 
     Ok(())

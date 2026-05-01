@@ -1,4 +1,4 @@
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand};
 use serde::{Deserialize, Serialize};
 use std::io::{self, IsTerminal, Read, Write};
 use std::path::PathBuf;
@@ -16,7 +16,7 @@ fn exit_with_help() -> ! {
 
 #[derive(Parser)]
 #[command(name = "snip")]
-#[command(about = "CLI tool for snipped snippet server")]
+#[command(about = "CLI tool for snipped snippet server", version)]
 struct Args {
     #[arg(short, long, help = "API key (or set SNIP_API_KEY env var)")]
     api_key: Option<String>,
@@ -98,6 +98,9 @@ enum Command {
         /// Snippet ID
         id: i64,
     },
+
+    /// Generate shell completion (add `eval "$(snip complete zsh)"` to .zshrc)
+    Complete { shell: clap_complete::Shell },
 }
 
 #[derive(Serialize, Deserialize, Debug, Default)]
@@ -439,6 +442,13 @@ async fn main() -> anyhow::Result<()> {
                 eprintln!("Error: {}", response.status());
                 std::process::exit(1);
             }
+            Ok(())
+        }
+
+        Command::Complete { shell } => {
+            let mut cmd = Args::command();
+            let name = cmd.get_name().to_string();
+            clap_complete::generate(shell, &mut cmd, name, &mut std::io::stdout());
             Ok(())
         }
 
