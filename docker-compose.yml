@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  snip:
+    build: .
+    container_name: snip
+    ports:
+      - "3000:3000"
+    volumes:
+      # - ./data:/data
+      - snip_data:/data
+    environment:
+      - DATABASE_URL=sqlite:/data/snip.db
+      - RUST_LOG=info
+    restart: unless-stopped
+
+volumes:
+  snip_data:

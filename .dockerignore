@@ -1,0 +1,11 @@
+/target
+/data
+*.db
+*.db-*
+.git
+.gitignore
+Dockerfile
+docker-compose.yml
+README.md
+*.md
+!src/index.html

@@ -4,6 +4,8 @@ A minimal snippet sharing service with API, CLI, and web frontend.
 
 ## Quick Start
 
+### Local Build
+
 ```bash
 # Build
 cargo build --release
@@ -12,6 +14,18 @@ cargo build --release
 ./target/release/snipped
 
 # Open http://localhost:3000
+```
+
+### Docker
+
+```bash
+# Build and run with Docker Compose
+docker-compose up -d
+
+# Or build manually
+docker build -t snip .
+docker run -d -p 3000:3000 -v snip_data:/data snip
+# docker run -d -p 3000:3000 -v ./data:/data snip
 ```
 
 ## Usage
