@@ -74,7 +74,10 @@ Response:
 
 ```bash
 # Using CLI
-echo "Hello World" | ./target/release/snip --desc "greeting" --lang javascript --api-key YOUR_API_KEY
+echo "Hello World" | ./target/release/snip --desc "greeting" --lang javascript
+
+# Or pipe from file
+cat file.rs | ./target/release/snip --desc "my rust code" --lang rust
 
 # Or with curl
 curl -X POST http://localhost:3000/api/snippets \
@@ -86,6 +89,48 @@ curl -X POST http://localhost:3000/api/snippets \
 **Limits:** Content max 5000 chars, Description max 255 chars.
 
 **Languages:** `plaintext` (default), `bash`, `c`, `cpp`, `csharp`, `css`, `go`, `html`, `java`, `javascript`, `json`, `kotlin`, `lua`, `markdown`, `php`, `python`, `ruby`, `rust`, `scala`, `shell`, `sql`, `swift`, `typescript`, `yaml`, `zig`
+
+### Get Snippet
+
+```bash
+# Get snippet by ID
+./target/release/snip get 123
+
+# Output includes metadata and full content
+```
+
+### Login / Register (CLI)
+
+The CLI can save credentials to `~/.config/snip/config.json`:
+
+```bash
+# Login
+./target/release/snip login myusername
+# (will prompt for password)
+
+# Register new account
+./target/release/snip register newusername
+# (will prompt for password)
+
+# Check who you are
+./target/release/snip whoami
+
+# Logout (clear credentials)
+./target/release/snip logout
+```
+
+### Search Snippets
+
+```bash
+# Search all snippets
+./target/release/snip search "function"
+
+# Search with language filter
+./target/release/snip search "main" --lang rust
+
+# Limit results
+./target/release/snip search "hello" --lang python -n 5
+```
 
 ### Delete Snippet
 

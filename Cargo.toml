@@ -23,8 +23,8 @@ uuid = { version = "1.16", features = ["v4"] }
 bcrypt = "0.17"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 clap = { version = "4.5", features = ["derive"] }
+urlencoding = "2.1"
+dirs = "5.0"
 anyhow = "1.0"
 tracing = "0.1"
 tracing-subscriber = "0.3"
-
-[dev-dependencies]
