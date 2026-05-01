@@ -159,7 +159,7 @@ const INDEX_HTML: &str = r##"
         [data-theme="dark"] {
             --bg-color: #1a1a1a;
             --text-color: #e0e0e0;
-            --container-bg: #2a2a2a;
+            --container-bg: #111;
             --border-color: #444;
             --border-strong: #666;
             --code-bg: #333;
@@ -201,7 +201,7 @@ const INDEX_HTML: &str = r##"
             text-decoration: underline;
         }
         .help {
-            background: var(--bg-color);
+            background: var(--container-bg);
             border: 1px solid var(--border-color);
             padding: 1rem;
             margin-bottom: 1.5rem;
@@ -249,7 +249,6 @@ const INDEX_HTML: &str = r##"
             background: var(--text-color);
         }
         .api-key-display {
-            background: var(--accent-bg);
             border: 1px solid var(--border-color);
             padding: 0.75rem;
             margin-top: 0.5rem;
