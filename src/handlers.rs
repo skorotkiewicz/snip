@@ -1,62 +1,185 @@
 use axum::{
     Json,
-    extract::{Query, State},
-    http::{HeaderMap, StatusCode},
+    body::Body,
+    extract::{FromRequestParts, Path, Query, State},
+    http::{StatusCode, request::Parts},
+    response::{IntoResponse, Response},
 };
 use bcrypt::{DEFAULT_COST, hash, verify};
 use uuid::Uuid;
 
 use crate::{AppState, models::*};
 
+// ==========================================
+// Error Handling
+// ==========================================
+
+#[derive(Debug)]
+pub struct AppError(pub StatusCode, pub String);
+
+impl AppError {
+    pub fn new(status: StatusCode, msg: impl Into<String>) -> Self {
+        Self(status, msg.into())
+    }
+    pub fn internal(msg: impl Into<String>) -> Self {
+        Self(StatusCode::INTERNAL_SERVER_ERROR, msg.into())
+    }
+    pub fn bad_request(msg: &str) -> Self {
+        Self(StatusCode::BAD_REQUEST, msg.to_string())
+    }
+    pub fn unauthorized(msg: &str) -> Self {
+        Self(StatusCode::UNAUTHORIZED, msg.to_string())
+    }
+    pub fn not_found(msg: &str) -> Self {
+        Self(StatusCode::NOT_FOUND, msg.to_string())
+    }
+}
+
+impl IntoResponse for AppError {
+    fn into_response(self) -> Response {
+        (self.0, self.1).into_response()
+    }
+}
+
+impl From<sqlx::Error> for AppError {
+    fn from(e: sqlx::Error) -> Self {
+        AppError::internal(e.to_string())
+    }
+}
+
+impl From<bcrypt::BcryptError> for AppError {
+    fn from(e: bcrypt::BcryptError) -> Self {
+        AppError::internal(e.to_string())
+    }
+}
+
+// ==========================================
+// Extractors
+// ==========================================
+
+#[derive(Debug, Clone)]
+pub struct AuthUser {
+    pub id: i64,
+    pub username: String,
+    pub api_key: String,
+}
+
+impl FromRequestParts<AppState> for AuthUser {
+    type Rejection = AppError;
+
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &AppState,
+    ) -> Result<Self, Self::Rejection> {
+        let api_key = parts
+            .headers
+            .get("x-api-key")
+            .and_then(|v| v.to_str().ok())
+            .ok_or(AppError::unauthorized("Missing X-API-Key header"))?;
+
+        let pool = state.db.pool();
+        let user: Option<(i64, String, String)> =
+            sqlx::query_as("SELECT id, username, api_key FROM users WHERE api_key = ?1")
+                .bind(api_key)
+                .fetch_optional(pool)
+                .await?;
+
+        user.map(|(id, username, api_key)| AuthUser {
+            id,
+            username,
+            api_key,
+        })
+        .ok_or(AppError::unauthorized("Invalid API key"))
+    }
+}
+
+#[derive(Debug)]
+pub struct OptionalAuthUser(pub Option<AuthUser>);
+
+impl FromRequestParts<AppState> for OptionalAuthUser {
+    type Rejection = std::convert::Infallible;
+
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &AppState,
+    ) -> Result<Self, Self::Rejection> {
+        Ok(OptionalAuthUser(
+            AuthUser::from_request_parts(parts, state).await.ok(),
+        ))
+    }
+}
+
+// ==========================================
+// Helpers & Constants
+// ==========================================
+
+const SNIPPET_BASE_SQL: &str = r#"
+    SELECT
+        s.id, s.content, s.description, s.language, s.created_at, s.views,
+        u.username as author,
+        (SELECT COUNT(*) FROM stars WHERE snippet_id = s.id) as stars,
+        s.forks, s.forked_from
+    FROM snippets s
+    JOIN users u ON s.user_id = u.id
+"#;
+
+async fn increment_views(state: &AppState, id: i64) -> Result<Option<i64>, AppError> {
+    let pool = state.db.pool();
+    if state.redis.is_enabled() {
+        let key = format!("views:{}", id);
+        Ok(state.redis.incr(&key).await)
+    } else {
+        sqlx::query("UPDATE snippets SET views = views + 1 WHERE id = ?1")
+            .bind(id)
+            .execute(pool)
+            .await?;
+        Ok(None)
+    }
+}
+
+async fn get_total_stars(pool: &sqlx::SqlitePool, snippet_id: i64) -> Result<i64, AppError> {
+    sqlx::query_scalar("SELECT COUNT(*) FROM stars WHERE snippet_id = ?1")
+        .bind(snippet_id)
+        .fetch_one(pool)
+        .await
+        .map_err(Into::into)
+}
+
+// ==========================================
+// Handlers
+// ==========================================
+
 pub async fn register_user(
     State(state): State<AppState>,
     Json(req): Json<CreateUserRequest>,
-) -> Result<Json<CreateUserResponse>, (StatusCode, String)> {
+) -> Result<Json<CreateUserResponse>, AppError> {
     let pool = state.db.pool();
 
-    // Rate limiting: 5 registrations per hour per IP
-    // Using username as identifier since we don't have direct IP access in this context
-    let allowed = state
+    if !state
         .redis
         .check_rate_limit("register", &req.username, 5, 3600)
-        .await;
-
-    if !allowed {
-        return Err((
+        .await
+    {
+        return Err(AppError::new(
             StatusCode::TOO_MANY_REQUESTS,
-            "Rate limit exceeded: 5 registrations per hour".to_string(),
+            "Rate limit exceeded: 5 registrations per hour",
         ));
     }
 
     if req.username.len() < 3 || req.username.len() > 32 {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            "Username must be 3-32 characters".to_string(),
-        ));
+        return Err(AppError::bad_request("Username must be 3-32 characters"));
     }
-
     if req.password.len() < 6 {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            "Password must be at least 6 characters".to_string(),
+        return Err(AppError::bad_request(
+            "Password must be at least 6 characters",
         ));
     }
 
-    let password_hash = hash(&req.password, DEFAULT_COST).map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Hash error: {}", e),
-        )
-    })?;
-
+    let password_hash = hash(&req.password, DEFAULT_COST)?;
     let api_key = Uuid::new_v4().to_string();
 
-    let result: Result<i64, sqlx::Error> = sqlx::query_scalar(
-        r#"
-        INSERT INTO users (username, password_hash, api_key)
-        VALUES (?1, ?2, ?3)
-        RETURNING id
-        "#,
+    let result = sqlx::query_scalar(
+        r#"INSERT INTO users (username, password_hash, api_key) VALUES (?1, ?2, ?3) RETURNING id"#,
     )
     .bind(&req.username)
     .bind(&password_hash)
@@ -70,165 +193,90 @@ pub async fn register_user(
             username: req.username,
             api_key,
         })),
-        Err(sqlx::Error::Database(e)) if e.is_unique_violation() => {
-            Err((StatusCode::CONFLICT, "Username already exists".to_string()))
-        }
-        Err(e) => Err((
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Database error: {}", e),
+        Err(sqlx::Error::Database(e)) if e.is_unique_violation() => Err(AppError::new(
+            StatusCode::CONFLICT,
+            "Username already exists",
         )),
+        Err(e) => Err(AppError::from(e)),
     }
 }
 
 pub async fn create_snippet(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    user: AuthUser,
     Json(req): Json<CreateSnippetRequest>,
-) -> Result<Json<CreateSnippetResponse>, (StatusCode, String)> {
+) -> Result<Json<CreateSnippetResponse>, AppError> {
     let pool = state.db.pool();
 
-    let api_key = headers
-        .get("x-api-key")
-        .and_then(|v| v.to_str().ok())
-        .ok_or((
-            StatusCode::UNAUTHORIZED,
-            "Missing X-API-Key header".to_string(),
-        ))?;
-
-    let user_row: Option<(i64,)> = sqlx::query_as("SELECT id FROM users WHERE api_key = ?1")
-        .bind(api_key)
-        .fetch_optional(pool)
-        .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Database error: {}", e),
-            )
-        })?;
-
-    let user_id = user_row
-        .ok_or((StatusCode::UNAUTHORIZED, "Invalid API key".to_string()))?
-        .0;
-
-    // Rate limiting: 10 snippets per minute per user
-    let allowed = state
+    if !state
         .redis
-        .check_rate_limit("snippet_create", &user_id.to_string(), 10, 60)
-        .await;
-
-    if !allowed {
-        return Err((
+        .check_rate_limit("snippet_create", &user.id.to_string(), 10, 60)
+        .await
+    {
+        return Err(AppError::new(
             StatusCode::TOO_MANY_REQUESTS,
-            "Rate limit exceeded: 10 snippets per minute".to_string(),
+            "Rate limit exceeded: 10 snippets per minute",
         ));
     }
 
     if req.content.is_empty() {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            "Content cannot be empty".to_string(),
-        ));
+        return Err(AppError::bad_request("Content cannot be empty"));
     }
-
     if req.content.len() > 5000 {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            "Content exceeds maximum length of 5000 characters".to_string(),
+        return Err(AppError::bad_request(
+            "Content exceeds maximum length of 5000 characters",
         ));
     }
-
     if req.description.as_ref().map(|d| d.len()).unwrap_or(0) > 255 {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            "Description exceeds maximum length of 255 characters".to_string(),
+        return Err(AppError::bad_request(
+            "Description exceeds maximum length of 255 characters",
         ));
     }
 
-    // Validate language
-    let validated_lang = CreateSnippetRequest::validate_language(&req.language)
-        .ok_or((
-            StatusCode::BAD_REQUEST,
-            "Invalid language. Valid: plaintext, bash, c, cpp, csharp, css, go, html, java, javascript, json, kotlin, lua, markdown, php, python, ruby, rust, scala, shell, sql, swift, typescript, yaml, zig".to_string(),
-        ))?;
+    let validated_lang = CreateSnippetRequest::validate_language(&req.language).ok_or_else(|| {
+        AppError::bad_request("Invalid language. Valid: plaintext, bash, c, cpp, csharp, css, go, html, java, javascript, json, kotlin, lua, markdown, php, python, ruby, rust, scala, shell, sql, swift, typescript, yaml, zig")
+    })?;
 
-    let result: Result<(i64, chrono::DateTime<chrono::Utc>), sqlx::Error> = sqlx::query_as(
-        r#"
-        INSERT INTO snippets (user_id, content, description, language)
-        VALUES (?1, ?2, ?3, ?4)
-        RETURNING id, created_at
-        "#,
+    let (id, created_at): (i64, chrono::DateTime<chrono::Utc>) = sqlx::query_as(
+        r#"INSERT INTO snippets (user_id, content, description, language) VALUES (?1, ?2, ?3, ?4) RETURNING id, created_at"#,
     )
-    .bind(user_id)
+    .bind(user.id)
     .bind(&req.content)
     .bind(&req.description)
     .bind(&validated_lang)
     .fetch_one(pool)
-    .await;
+    .await?;
 
-    match result {
-        Ok((id, created_at)) => Ok(Json(CreateSnippetResponse {
-            id,
-            content: req.content,
-            description: req.description,
-            language: Some(validated_lang),
-            created_at,
-        })),
-        Err(e) => Err((
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Database error: {}", e),
-        )),
-    }
+    Ok(Json(CreateSnippetResponse {
+        id,
+        content: req.content,
+        description: req.description,
+        language: Some(validated_lang),
+        created_at,
+    }))
 }
 
 pub async fn list_snippets(
     State(state): State<AppState>,
     Query(query): Query<PaginationQuery>,
-) -> Result<Json<ListSnippetsResponse>, (StatusCode, String)> {
+) -> Result<Json<ListSnippetsResponse>, AppError> {
     let pool = state.db.pool();
-
     let page = query.page.max(1);
     let limit = query.limit.clamp(1, 100);
     let offset = (page - 1) * limit;
 
     let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM snippets")
         .fetch_one(pool)
-        .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Database error: {}", e),
-            )
-        })?;
+        .await?;
 
-    let rows: Vec<SnippetWithAuthor> = sqlx::query_as(
-        r#"
-        SELECT
-            s.id,
-            s.content,
-            s.description,
-            s.language,
-            s.created_at,
-            s.views,
-            u.username as author,
-            (SELECT COUNT(*) FROM stars WHERE snippet_id = s.id) as stars,
-            s.forks,
-            s.forked_from
-        FROM snippets s
-        JOIN users u ON s.user_id = u.id
-        ORDER BY s.created_at DESC
-        LIMIT ?1 OFFSET ?2
-        "#,
-    )
+    let rows: Vec<SnippetWithAuthor> = sqlx::query_as(&format!(
+        "{} ORDER BY s.created_at DESC LIMIT ?1 OFFSET ?2",
+        SNIPPET_BASE_SQL
+    ))
     .bind(limit)
     .bind(offset)
     .fetch_all(pool)
-    .await
-    .map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Database error: {}", e),
-        )
-    })?;
+    .await?;
 
     Ok(Json(ListSnippetsResponse {
         snippets: rows,
@@ -240,63 +288,30 @@ pub async fn list_snippets(
 
 pub async fn list_user_snippets(
     State(state): State<AppState>,
-    axum::extract::Path(username): axum::extract::Path<String>,
+    Path(username): Path<String>,
     Query(query): Query<PaginationQuery>,
-) -> Result<Json<ListSnippetsResponse>, (StatusCode, String)> {
+) -> Result<Json<ListSnippetsResponse>, AppError> {
     let pool = state.db.pool();
-
     let page = query.page.max(1);
     let limit = query.limit.clamp(1, 100);
     let offset = (page - 1) * limit;
 
     let total: i64 = sqlx::query_scalar(
-        r#"
-        SELECT COUNT(*) FROM snippets s
-        JOIN users u ON s.user_id = u.id
-        WHERE u.username = ?1
-        "#,
+        "SELECT COUNT(*) FROM snippets s JOIN users u ON s.user_id = u.id WHERE u.username = ?1",
     )
     .bind(&username)
     .fetch_one(pool)
-    .await
-    .map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Database error: {}", e),
-        )
-    })?;
+    .await?;
 
-    let rows: Vec<SnippetWithAuthor> = sqlx::query_as(
-        r#"
-        SELECT
-            s.id,
-            s.content,
-            s.description,
-            s.language,
-            s.created_at,
-            s.views,
-            u.username as author,
-            (SELECT COUNT(*) FROM stars WHERE snippet_id = s.id) as stars,
-            s.forks,
-            s.forked_from
-        FROM snippets s
-        JOIN users u ON s.user_id = u.id
-        WHERE u.username = ?1
-        ORDER BY s.created_at DESC
-        LIMIT ?2 OFFSET ?3
-        "#,
-    )
+    let rows: Vec<SnippetWithAuthor> = sqlx::query_as(&format!(
+        "{} WHERE u.username = ?1 ORDER BY s.created_at DESC LIMIT ?2 OFFSET ?3",
+        SNIPPET_BASE_SQL
+    ))
     .bind(&username)
     .bind(limit)
     .bind(offset)
     .fetch_all(pool)
-    .await
-    .map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Database error: {}", e),
-        )
-    })?;
+    .await?;
 
     Ok(Json(ListSnippetsResponse {
         snippets: rows,
@@ -308,133 +323,56 @@ pub async fn list_user_snippets(
 
 pub async fn get_snippet(
     State(state): State<AppState>,
-    axum::extract::Path(id): axum::extract::Path<i64>,
-) -> Result<Json<SnippetWithAuthor>, (StatusCode, String)> {
+    Path(id): Path<i64>,
+) -> Result<Json<SnippetWithAuthor>, AppError> {
     let pool = state.db.pool();
+    let redis_count = increment_views(&state, id).await?;
 
-    // Increment views using Redis if available, otherwise fallback to database
-    let redis_count = if state.redis.is_enabled() {
-        let key = format!("views:{}", id);
-        state.redis.incr(&key).await
-    } else {
-        // Fallback: increment directly in database
-        sqlx::query("UPDATE snippets SET views = views + 1 WHERE id = ?1")
+    let mut snippet: SnippetWithAuthor =
+        sqlx::query_as(&format!("{} WHERE s.id = ?1", SNIPPET_BASE_SQL))
             .bind(id)
-            .execute(pool)
-            .await
-            .map_err(|e| {
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    format!("Database error: {}", e),
-                )
-            })?;
-        None
-    };
+            .fetch_optional(pool)
+            .await?
+            .ok_or(AppError::not_found("Snippet not found"))?;
 
-    let snippet: Option<SnippetWithAuthor> = sqlx::query_as(
-        r#"
-        SELECT
-            s.id,
-            s.content,
-            s.description,
-            s.language,
-            s.created_at,
-            s.views,
-            u.username as author,
-            (SELECT COUNT(*) FROM stars WHERE snippet_id = s.id) as stars,
-            s.forks,
-            s.forked_from
-        FROM snippets s
-        JOIN users u ON s.user_id = u.id
-        WHERE s.id = ?1
-        "#,
-    )
-    .bind(id)
-    .fetch_optional(pool)
-    .await
-    .map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Database error: {}", e),
-        )
-    })?;
-
-    match snippet {
-        Some(mut s) => {
-            // If we have a Redis count, add it to the database count
-            if let Some(redis_views) = redis_count {
-                s.views += redis_views;
-            }
-            Ok(Json(s))
-        }
-        None => Err((StatusCode::NOT_FOUND, "Snippet not found".to_string())),
+    if let Some(redis_views) = redis_count {
+        snippet.views += redis_views;
     }
+
+    Ok(Json(snippet))
 }
 
 pub async fn get_raw_snippet(
     State(state): State<AppState>,
-    axum::extract::Path(id): axum::extract::Path<i64>,
-) -> Result<axum::response::Response, (StatusCode, String)> {
+    Path(id): Path<i64>,
+) -> Result<Response, AppError> {
     let pool = state.db.pool();
-
-    // Increment views using Redis if available, otherwise fallback to database
-    if state.redis.is_enabled() {
-        let key = format!("views:{}", id);
-        let _: Option<i64> = state.redis.incr(&key).await;
-    } else {
-        // Fallback: increment directly in database
-        sqlx::query("UPDATE snippets SET views = views + 1 WHERE id = ?1")
-            .bind(id)
-            .execute(pool)
-            .await
-            .map_err(|e| {
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    format!("Database error: {}", e),
-                )
-            })?;
-    }
+    increment_views(&state, id).await?;
 
     let content: Option<(String,)> = sqlx::query_as("SELECT content FROM snippets WHERE id = ?1")
         .bind(id)
         .fetch_optional(pool)
-        .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Database error: {}", e),
-            )
-        })?;
+        .await?;
 
     match content {
-        Some((content,)) => {
-            let response = axum::response::Response::builder()
-                .status(StatusCode::OK)
-                .header("Content-Type", "text/plain; charset=utf-8")
-                .body(axum::body::Body::from(content))
-                .map_err(|e| {
-                    (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        format!("Response error: {}", e),
-                    )
-                })?;
-            Ok(response)
-        }
-        None => Err((StatusCode::NOT_FOUND, "Snippet not found".to_string())),
+        Some((content,)) => Ok(Response::builder()
+            .status(StatusCode::OK)
+            .header("Content-Type", "text/plain; charset=utf-8")
+            .body(Body::from(content))
+            .map_err(|e| AppError::internal(e.to_string()))?),
+        None => Err(AppError::not_found("Snippet not found")),
     }
 }
 
 pub async fn search_snippets(
     State(state): State<AppState>,
     Query(query): Query<SearchQuery>,
-) -> Result<Json<ListSnippetsResponse>, (StatusCode, String)> {
+) -> Result<Json<ListSnippetsResponse>, AppError> {
     let pool = state.db.pool();
-
     let page = query.page.max(1);
     let limit = query.limit.clamp(1, 100);
     let offset = (page - 1) * limit;
 
-    // Build the WHERE clause based on search parameters
     let mut conditions = Vec::new();
     let mut params: Vec<String> = Vec::new();
 
@@ -456,67 +394,30 @@ pub async fn search_snippets(
     }
 
     let where_clause = if conditions.is_empty() {
-        ""
+        String::new()
     } else {
-        &format!("WHERE {}", conditions.join(" AND "))
+        format!("WHERE {}", conditions.join(" AND "))
     };
 
-    // Build count query
     let count_sql = format!(
         "SELECT COUNT(*) FROM snippets s JOIN users u ON s.user_id = u.id {}",
         where_clause
     );
-
     let mut count_query = sqlx::query_scalar(&count_sql);
     for param in &params {
         count_query = count_query.bind(param);
     }
+    let total: i64 = count_query.fetch_one(pool).await?;
 
-    let total: i64 = count_query.fetch_one(pool).await.map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Database error: {}", e),
-        )
-    })?;
-
-    // Build data query
     let data_sql = format!(
-        r#"
-        SELECT
-            s.id,
-            s.content,
-            s.description,
-            s.language,
-            s.created_at,
-            s.views,
-            u.username as author,
-            (SELECT COUNT(*) FROM stars WHERE snippet_id = s.id) as stars,
-            s.forks,
-            s.forked_from
-        FROM snippets s
-        JOIN users u ON s.user_id = u.id
-        {}
-        ORDER BY s.created_at DESC
-        LIMIT ? OFFSET ?
-        "#,
-        where_clause
+        "{} {} ORDER BY s.created_at DESC LIMIT ? OFFSET ?",
+        SNIPPET_BASE_SQL, where_clause
     );
-
     let mut data_query = sqlx::query_as::<_, SnippetWithAuthor>(&data_sql);
     for param in &params {
         data_query = data_query.bind(param);
     }
-    let rows: Vec<SnippetWithAuthor> = data_query
-        .bind(limit)
-        .bind(offset)
-        .fetch_all(pool)
-        .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Database error: {}", e),
-            )
-        })?;
+    let rows: Vec<SnippetWithAuthor> = data_query.bind(limit).bind(offset).fetch_all(pool).await?;
 
     Ok(Json(ListSnippetsResponse {
         snippets: rows,
@@ -529,336 +430,149 @@ pub async fn search_snippets(
 pub async fn login(
     State(state): State<AppState>,
     Json(req): Json<LoginRequest>,
-) -> Result<Json<LoginResponse>, (StatusCode, String)> {
+) -> Result<Json<LoginResponse>, AppError> {
     let pool = state.db.pool();
 
-    // Rate limiting: 10 login attempts per minute per username
-    let allowed = state
+    if !state
         .redis
         .check_rate_limit("login", &req.username, 10, 60)
-        .await;
-
-    if !allowed {
-        return Err((
+        .await
+    {
+        return Err(AppError::new(
             StatusCode::TOO_MANY_REQUESTS,
-            "Rate limit exceeded: 10 login attempts per minute".to_string(),
+            "Rate limit exceeded: 10 login attempts per minute",
         ));
     }
 
-    let user: Option<(String, String)> =
-        sqlx::query_as("SELECT username, password_hash FROM users WHERE username = ?1")
+    // Combine user fetch and API key retrieval into one query
+    let user: Option<(String, String, String)> =
+        sqlx::query_as("SELECT username, password_hash, api_key FROM users WHERE username = ?1")
             .bind(&req.username)
             .fetch_optional(pool)
-            .await
-            .map_err(|e| {
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    format!("Database error: {}", e),
-                )
-            })?;
+            .await?;
 
-    let (username, password_hash) = user.ok_or((
-        StatusCode::UNAUTHORIZED,
-        "Invalid username or password".to_string(),
-    ))?;
+    let (username, password_hash, api_key) =
+        user.ok_or(AppError::unauthorized("Invalid username or password"))?;
 
-    let valid = verify(&req.password, &password_hash).map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Password verification error: {}", e),
-        )
-    })?;
-
+    let valid = verify(&req.password, &password_hash)?;
     if !valid {
-        return Err((
-            StatusCode::UNAUTHORIZED,
-            "Invalid username or password".to_string(),
-        ));
+        return Err(AppError::unauthorized("Invalid username or password"));
     }
-
-    let api_key: String = sqlx::query_scalar("SELECT api_key FROM users WHERE username = ?1")
-        .bind(&username)
-        .fetch_one(pool)
-        .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Database error: {}", e),
-            )
-        })?;
 
     Ok(Json(LoginResponse { username, api_key }))
 }
 
 pub async fn revoke_api_key(
     State(state): State<AppState>,
-    headers: HeaderMap,
-) -> Result<Json<RevokeKeyResponse>, (StatusCode, String)> {
+    user: AuthUser,
+) -> Result<Json<RevokeKeyResponse>, AppError> {
     let pool = state.db.pool();
-
-    let old_api_key = headers
-        .get("x-api-key")
-        .and_then(|v| v.to_str().ok())
-        .ok_or((
-            StatusCode::UNAUTHORIZED,
-            "Missing X-API-Key header".to_string(),
-        ))?;
-
-    let user: Option<(String, String)> =
-        sqlx::query_as("SELECT username, api_key FROM users WHERE api_key = ?1")
-            .bind(old_api_key)
-            .fetch_optional(pool)
-            .await
-            .map_err(|e| {
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    format!("Database error: {}", e),
-                )
-            })?;
-
-    let (username, old_key) =
-        user.ok_or((StatusCode::UNAUTHORIZED, "Invalid API key".to_string()))?;
-
     let new_api_key = Uuid::new_v4().to_string();
 
-    sqlx::query("UPDATE users SET api_key = ?1 WHERE username = ?2")
+    sqlx::query("UPDATE users SET api_key = ?1 WHERE id = ?2")
         .bind(&new_api_key)
-        .bind(&username)
+        .bind(user.id)
         .execute(pool)
-        .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Database error: {}", e),
-            )
-        })?;
+        .await?;
 
     Ok(Json(RevokeKeyResponse {
-        username,
-        old_api_key: old_key,
+        username: user.username,
+        old_api_key: user.api_key,
         new_api_key,
     }))
 }
 
 pub async fn change_password(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    user: AuthUser,
     Json(req): Json<ChangePasswordRequest>,
-) -> Result<Json<ChangePasswordResponse>, (StatusCode, String)> {
+) -> Result<Json<ChangePasswordResponse>, AppError> {
     let pool = state.db.pool();
 
-    let api_key = headers
-        .get("x-api-key")
-        .and_then(|v| v.to_str().ok())
-        .ok_or((
-            StatusCode::UNAUTHORIZED,
-            "Missing X-API-Key header".to_string(),
-        ))?;
+    let (password_hash,): (String,) =
+        sqlx::query_as("SELECT password_hash FROM users WHERE id = ?1")
+            .bind(user.id)
+            .fetch_one(pool)
+            .await?;
 
-    // Get user info
-    let user: Option<(String, String)> =
-        sqlx::query_as("SELECT username, password_hash FROM users WHERE api_key = ?1")
-            .bind(api_key)
-            .fetch_optional(pool)
-            .await
-            .map_err(|e| {
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    format!("Database error: {}", e),
-                )
-            })?;
-
-    let (username, password_hash) =
-        user.ok_or((StatusCode::UNAUTHORIZED, "Invalid API key".to_string()))?;
-
-    // Verify old password
-    let valid = verify(&req.old_password, &password_hash).map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Password verification error: {}", e),
-        )
-    })?;
-
+    let valid = verify(&req.old_password, &password_hash)?;
     if !valid {
-        return Err((StatusCode::UNAUTHORIZED, "Invalid old password".to_string()));
+        return Err(AppError::unauthorized("Invalid old password"));
     }
-
-    // Validate new password
     if req.new_password.len() < 6 {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            "New password must be at least 6 characters".to_string(),
+        return Err(AppError::bad_request(
+            "New password must be at least 6 characters",
         ));
     }
 
-    // Hash new password
-    let new_password_hash = hash(&req.new_password, DEFAULT_COST).map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Hash error: {}", e),
-        )
-    })?;
-
-    // Update password
-    sqlx::query("UPDATE users SET password_hash = ?1 WHERE username = ?2")
+    let new_password_hash = hash(&req.new_password, DEFAULT_COST)?;
+    sqlx::query("UPDATE users SET password_hash = ?1 WHERE id = ?2")
         .bind(&new_password_hash)
-        .bind(&username)
+        .bind(user.id)
         .execute(pool)
-        .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Database error: {}", e),
-            )
-        })?;
+        .await?;
 
     Ok(Json(ChangePasswordResponse {
-        username,
+        username: user.username,
         message: "Password changed successfully".to_string(),
     }))
 }
 
 pub async fn delete_snippet(
     State(state): State<AppState>,
-    headers: HeaderMap,
-    axum::extract::Path(id): axum::extract::Path<i64>,
-) -> Result<StatusCode, (StatusCode, String)> {
+    user: AuthUser,
+    Path(id): Path<i64>,
+) -> Result<StatusCode, AppError> {
     let pool = state.db.pool();
 
-    let api_key = headers
-        .get("x-api-key")
-        .and_then(|v| v.to_str().ok())
-        .ok_or((
-            StatusCode::UNAUTHORIZED,
-            "Missing X-API-Key header".to_string(),
-        ))?;
-
-    // Get user id from API key
-    let user: Option<(i64,)> = sqlx::query_as("SELECT id FROM users WHERE api_key = ?1")
-        .bind(api_key)
-        .fetch_optional(pool)
-        .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Database error: {}", e),
-            )
-        })?;
-
-    let (user_id,) = user.ok_or((StatusCode::UNAUTHORIZED, "Invalid API key".to_string()))?;
-
-    // Check if snippet exists and belongs to user
-    let snippet: Option<(i64,)> = sqlx::query_as("SELECT user_id FROM snippets WHERE id = ?1")
+    let result = sqlx::query("DELETE FROM snippets WHERE id = ?1 AND user_id = ?2")
         .bind(id)
-        .fetch_optional(pool)
-        .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Database error: {}", e),
-            )
-        })?;
-
-    if let Some((snippet_user_id,)) = snippet {
-        if snippet_user_id != user_id {
-            return Err((
-                StatusCode::FORBIDDEN,
-                "Can only delete your own snippets".to_string(),
-            ));
-        }
-    } else {
-        return Err((StatusCode::NOT_FOUND, "Snippet not found".to_string()));
-    }
-
-    // Delete the snippet
-    sqlx::query("DELETE FROM snippets WHERE id = ?1 AND user_id = ?2")
-        .bind(id)
-        .bind(user_id)
+        .bind(user.id)
         .execute(pool)
-        .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Database error: {}", e),
-            )
-        })?;
+        .await?;
+
+    if result.rows_affected() == 0 {
+        let exists: bool =
+            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM snippets WHERE id = ?1)")
+                .bind(id)
+                .fetch_one(pool)
+                .await?;
+
+        return if exists {
+            Err(AppError::new(
+                StatusCode::FORBIDDEN,
+                "Can only delete your own snippets",
+            ))
+        } else {
+            Err(AppError::not_found("Snippet not found"))
+        };
+    }
 
     Ok(StatusCode::NO_CONTENT)
 }
 
 pub async fn star_snippet(
     State(state): State<AppState>,
-    headers: HeaderMap,
-    axum::extract::Path(id): axum::extract::Path<i64>,
-) -> Result<Json<StarResponse>, (StatusCode, String)> {
+    user: AuthUser,
+    Path(id): Path<i64>,
+) -> Result<Json<StarResponse>, AppError> {
     let pool = state.db.pool();
 
-    let api_key = headers
-        .get("x-api-key")
-        .and_then(|v| v.to_str().ok())
-        .ok_or((
-            StatusCode::UNAUTHORIZED,
-            "Missing X-API-Key header".to_string(),
-        ))?;
-
-    let user: Option<(i64,)> = sqlx::query_as("SELECT id FROM users WHERE api_key = ?1")
-        .bind(api_key)
-        .fetch_optional(pool)
-        .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Database error: {}", e),
-            )
-        })?;
-
-    let (user_id,) = user.ok_or((StatusCode::UNAUTHORIZED, "Invalid API key".to_string()))?;
-
-    // Check if snippet exists
-    let snippet_exists: Option<(i64,)> = sqlx::query_as("SELECT id FROM snippets WHERE id = ?1")
-        .bind(id)
-        .fetch_optional(pool)
-        .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Database error: {}", e),
-            )
-        })?;
-
-    snippet_exists.ok_or((StatusCode::NOT_FOUND, "Snippet not found".to_string()))?;
-
-    // Add star
-    let result = sqlx::query(
-        "INSERT INTO stars (user_id, snippet_id) VALUES (?1, ?2) ON CONFLICT DO NOTHING",
-    )
-    .bind(user_id)
-    .bind(id)
-    .execute(pool)
-    .await;
-
-    let _was_added = match result {
-        Ok(res) => res.rows_affected() > 0,
-        Err(e) => {
-            return Err((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Database error: {}", e),
-            ));
-        }
-    };
-
-    // Get total stars
-    let total_stars: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM stars WHERE snippet_id = ?1")
+    let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM snippets WHERE id = ?1)")
         .bind(id)
         .fetch_one(pool)
-        .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Database error: {}", e),
-            )
-        })?;
+        .await?;
+    if !exists {
+        return Err(AppError::not_found("Snippet not found"));
+    }
 
+    sqlx::query("INSERT INTO stars (user_id, snippet_id) VALUES (?1, ?2) ON CONFLICT DO NOTHING")
+        .bind(user.id)
+        .bind(id)
+        .execute(pool)
+        .await?;
+
+    let total_stars = get_total_stars(pool, id).await?;
     Ok(Json(StarResponse {
         snippet_id: id,
         starred: true,
@@ -868,57 +582,18 @@ pub async fn star_snippet(
 
 pub async fn unstar_snippet(
     State(state): State<AppState>,
-    headers: HeaderMap,
-    axum::extract::Path(id): axum::extract::Path<i64>,
-) -> Result<Json<StarResponse>, (StatusCode, String)> {
+    user: AuthUser,
+    Path(id): Path<i64>,
+) -> Result<Json<StarResponse>, AppError> {
     let pool = state.db.pool();
 
-    let api_key = headers
-        .get("x-api-key")
-        .and_then(|v| v.to_str().ok())
-        .ok_or((
-            StatusCode::UNAUTHORIZED,
-            "Missing X-API-Key header".to_string(),
-        ))?;
-
-    let user: Option<(i64,)> = sqlx::query_as("SELECT id FROM users WHERE api_key = ?1")
-        .bind(api_key)
-        .fetch_optional(pool)
-        .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Database error: {}", e),
-            )
-        })?;
-
-    let (user_id,) = user.ok_or((StatusCode::UNAUTHORIZED, "Invalid API key".to_string()))?;
-
-    // Remove star
     sqlx::query("DELETE FROM stars WHERE user_id = ?1 AND snippet_id = ?2")
-        .bind(user_id)
+        .bind(user.id)
         .bind(id)
         .execute(pool)
-        .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Database error: {}", e),
-            )
-        })?;
+        .await?;
 
-    // Get total stars
-    let total_stars: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM stars WHERE snippet_id = ?1")
-        .bind(id)
-        .fetch_one(pool)
-        .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Database error: {}", e),
-            )
-        })?;
-
+    let total_stars = get_total_stars(pool, id).await?;
     Ok(Json(StarResponse {
         snippet_id: id,
         starred: false,
@@ -928,45 +603,24 @@ pub async fn unstar_snippet(
 
 pub async fn get_star_status(
     State(state): State<AppState>,
-    headers: HeaderMap,
-    axum::extract::Path(id): axum::extract::Path<i64>,
-) -> Result<Json<StarStatusResponse>, (StatusCode, String)> {
+    opt_user: OptionalAuthUser,
+    Path(id): Path<i64>,
+) -> Result<Json<StarStatusResponse>, AppError> {
     let pool = state.db.pool();
 
-    let api_key_opt = headers.get("x-api-key").and_then(|v| v.to_str().ok());
-
-    let mut user_starred = false;
-
-    // Check if user has starred (if API key provided)
-    if let Some(api_key) = api_key_opt {
-        let starred: Option<(i64,)> = sqlx::query_as(
-            "SELECT 1 FROM stars s JOIN users u ON s.user_id = u.id WHERE u.api_key = ?1 AND s.snippet_id = ?2"
+    let user_starred = if let Some(u) = opt_user.0 {
+        sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM stars WHERE user_id = ?1 AND snippet_id = ?2)",
         )
-        .bind(api_key)
-        .bind(id)
-        .fetch_optional(pool)
-        .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Database error: {}", e),
-            )
-        })?;
-        user_starred = starred.is_some();
-    }
-
-    // Get total stars
-    let total_stars: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM stars WHERE snippet_id = ?1")
+        .bind(u.id)
         .bind(id)
         .fetch_one(pool)
-        .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Database error: {}", e),
-            )
-        })?;
+        .await?
+    } else {
+        false
+    };
 
+    let total_stars = get_total_stars(pool, id).await?;
     Ok(Json(StarStatusResponse {
         snippet_id: id,
         starred: user_starred,
@@ -976,124 +630,61 @@ pub async fn get_star_status(
 
 pub async fn fork_snippet(
     State(state): State<AppState>,
-    headers: HeaderMap,
-    axum::extract::Path(id): axum::extract::Path<i64>,
-) -> Result<Json<ForkResponse>, (StatusCode, String)> {
+    user: AuthUser,
+    Path(id): Path<i64>,
+) -> Result<Json<ForkResponse>, AppError> {
     let pool = state.db.pool();
 
-    let api_key = headers
-        .get("x-api-key")
-        .and_then(|v| v.to_str().ok())
-        .ok_or((
-            StatusCode::UNAUTHORIZED,
-            "Missing X-API-Key header".to_string(),
-        ))?;
-
-    // Get user info
-    let user: Option<(i64,)> = sqlx::query_as("SELECT id FROM users WHERE api_key = ?1")
-        .bind(api_key)
-        .fetch_optional(pool)
-        .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Database error: {}", e),
-            )
-        })?;
-
-    let (user_id,) = user.ok_or((StatusCode::UNAUTHORIZED, "Invalid API key".to_string()))?;
-
-    // Rate limiting: 10 forks per minute per user
-    let allowed = state
+    if !state
         .redis
-        .check_rate_limit("fork", &user_id.to_string(), 10, 60)
-        .await;
-
-    if !allowed {
-        return Err((
+        .check_rate_limit("fork", &user.id.to_string(), 10, 60)
+        .await
+    {
+        return Err(AppError::new(
             StatusCode::TOO_MANY_REQUESTS,
-            "Rate limit exceeded: 10 forks per minute".to_string(),
+            "Rate limit exceeded: 10 forks per minute",
         ));
     }
 
-    // Get the snippet to fork
     let snippet: Option<(String, Option<String>, Option<String>, i64)> = sqlx::query_as(
         "SELECT content, description, language, user_id FROM snippets WHERE id = ?1",
     )
     .bind(id)
     .fetch_optional(pool)
-    .await
-    .map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Database error: {}", e),
-        )
-    })?;
+    .await?;
 
     let (content, description, language, owner_id) =
-        snippet.ok_or((StatusCode::NOT_FOUND, "Snippet not found".to_string()))?;
+        snippet.ok_or(AppError::not_found("Snippet not found"))?;
 
-    // Cannot fork your own snippet
-    if owner_id == user_id {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            "Cannot fork your own snippet".to_string(),
-        ));
+    if owner_id == user.id {
+        return Err(AppError::bad_request("Cannot fork your own snippet"));
     }
 
-    // Create the forked snippet
-    let result: Result<(i64,), sqlx::Error> = sqlx::query_as(
-        r#"
-        INSERT INTO snippets (user_id, content, description, language, forked_from)
-        VALUES (?1, ?2, ?3, ?4, ?5)
-        RETURNING id
-        "#,
+    let (new_id,): (i64,) = sqlx::query_as(
+        r#"INSERT INTO snippets (user_id, content, description, language, forked_from)
+        VALUES (?1, ?2, ?3, ?4, ?5) RETURNING id"#,
     )
-    .bind(user_id)
+    .bind(user.id)
     .bind(&content)
     .bind(&description)
     .bind(&language)
     .bind(id)
     .fetch_one(pool)
-    .await;
+    .await?;
 
-    let new_snippet_id = match result {
-        Ok((id,)) => id,
-        Err(e) => {
-            return Err((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Database error: {}", e),
-            ));
-        }
-    };
-
-    // Increment forks count on original snippet
     sqlx::query("UPDATE snippets SET forks = forks + 1 WHERE id = ?1")
         .bind(id)
         .execute(pool)
-        .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Database error: {}", e),
-            )
-        })?;
+        .await?;
 
-    // Get total forks
     let total_forks: i64 = sqlx::query_scalar("SELECT forks FROM snippets WHERE id = ?1")
         .bind(id)
         .fetch_one(pool)
-        .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Database error: {}", e),
-            )
-        })?;
+        .await?;
 
     Ok(Json(ForkResponse {
         snippet_id: id,
-        forked_id: new_snippet_id,
+        forked_id: new_id,
         total_forks,
     }))
 }
