@@ -77,6 +77,8 @@ pub struct SnippetWithAuthor {
     pub author: String,
     pub views: i64,
     pub stars: i64,
+    pub forks: i64,
+    pub forked_from: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -185,4 +187,11 @@ pub struct StarStatusResponse {
     pub snippet_id: i64,
     pub starred: bool,
     pub total_stars: i64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ForkResponse {
+    pub snippet_id: i64,
+    pub forked_id: i64,
+    pub total_forks: i64,
 }

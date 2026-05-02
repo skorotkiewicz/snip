@@ -279,6 +279,40 @@ pub const INDEX_HTML: &str = r##"
             color: var(--muted);
             margin-left: 0.5rem;
         }
+        .fork-count {
+            font-size: 0.875rem;
+            color: var(--muted);
+            margin-left: 0.5rem;
+        }
+        .forked-from {
+            font-size: 0.875rem;
+            color: var(--muted);
+        }
+        .forked-from a {
+            color: var(--link);
+            text-decoration: underline;
+        }
+
+        /* Fork Button */
+        .fork-btn {
+            font-family: inherit;
+            font-size: 0.875rem;
+            padding: 0.125rem 0.375rem;
+            background: var(--star-bg);
+            border: 1px solid var(--star-border);
+            color: var(--fg);
+            cursor: pointer;
+            margin-left: 0.5rem;
+            transition: all 0.2s;
+        }
+        .fork-btn:hover {
+            background: var(--code-bg);
+            border-color: var(--star-hover);
+        }
+        [data-theme="dark"] .fork-btn:hover {
+            background: #2a2a2a;
+            border-color: #777;
+        }
 
         /* ===== Pagination ===== */
         .pagination {
@@ -618,12 +652,19 @@ pub const INDEX_HTML: &str = r##"
             const starBtn = apiKey
                 ? ` <button class="star-btn${s.starred ? ' starred' : ''}" data-action="star" data-id="${s.id}" title="${s.starred ? 'Unstar' : 'Star'}">${s.starred ? '★' : '☆'} ${starCount}</button>`
                 : ` <span class="star-count">☆ ${starCount}</span>`;
+            const forkCount = s.forks || 0;
+            const forkBtn = apiKey
+                ? ` <button class="fork-btn" data-action="fork" data-id="${s.id}" title="Fork">🍴 ${forkCount}</button>`
+                : (forkCount > 0 ? ` <span class="fork-count">🍴 ${forkCount}</span>` : '');
+            const forkedFrom = s.forked_from
+                ? ` · <span class="forked-from">forked from <a href="/s/${s.forked_from}">/s/${s.forked_from}</a></span>`
+                : '';
             const langClass = s.language && s.language !== 'plaintext' ? ` class="language-${s.language}"` : '';
             const views = s.views || 0;
             return `<div class="snippet" id="snippet-${s.id}">
                     ${desc}
                     <div class="snippet-content"><pre><code${langClass}>${escapeHtml(s.content)}</code></pre></div>
-                    <div class="snippet-meta">${author} · <a href="/s/${s.id}">${formatDate(s.created_at)}</a> · ${views} views${starBtn} · <a href="/raw/${s.id}" class="raw-link">raw</a>${deleteBtn}</div>
+                    <div class="snippet-meta">${author} · <a href="/s/${s.id}">${formatDate(s.created_at)}</a> · ${views} views${starBtn}${forkBtn}${forkedFrom} · <a href="/raw/${s.id}" class="raw-link">raw</a>${deleteBtn}</div>
                 </div>`;
         }).join('');
 
@@ -733,6 +774,35 @@ pub const INDEX_HTML: &str = r##"
                 toast('Failed to update star', 'error');
             }
         } catch (e) { toast('Error starring snippet', 'error'); }
+    }
+
+    async function forkSnippet(id) {
+        const { apiKey } = getAuth();
+        if (!apiKey) { toast('Please login to fork snippets', 'error'); return; }
+        try {
+            const resp = await apiFetch(`/api/snippets/${id}/fork`, {
+                method: 'POST',
+                apiKey,
+            });
+            if (resp.ok) {
+                const data = await resp.json();
+                toast(`Forked as snippet #${data.forked_id}`, 'success');
+                // Refresh to show updated fork count and the new snippet
+                setTimeout(() => {
+                    window.location.href = `/s/${data.forked_id}`;
+                }, 800);
+            } else if (resp.status === 400) {
+                toast('Cannot fork your own snippet', 'error');
+            } else if (resp.status === 404) {
+                toast('Snippet not found', 'error');
+            } else if (resp.status === 401) {
+                toast('Session expired. Please login again.', 'error');
+            } else if (resp.status === 429) {
+                toast('Rate limit: 10 forks per minute', 'error');
+            } else {
+                toast('Failed to fork snippet', 'error');
+            }
+        } catch (e) { toast('Error forking snippet', 'error'); }
     }
 
     // ===== Auth =====
@@ -1031,6 +1101,7 @@ pub const INDEX_HTML: &str = r##"
             const { action, id } = btn.dataset;
             if (action === 'delete') deleteSnippet(id);
             if (action === 'star') toggleStar(id, btn);
+            if (action === 'fork') forkSnippet(id);
         });
 
         // Pagination (event delegation)

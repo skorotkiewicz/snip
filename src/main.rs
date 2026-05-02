@@ -122,6 +122,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/snippets/{id}/star", post(star_snippet))
         .route("/api/snippets/{id}/star", delete(unstar_snippet))
         .route("/api/snippets/{id}/star", get(get_star_status))
+        .route("/api/snippets/{id}/fork", post(fork_snippet))
         .route("/api/search", get(search_snippets))
         .route("/api/users/{username}/snippets", get(list_user_snippets))
         .layer(CorsLayer::permissive())

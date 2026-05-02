@@ -167,6 +167,12 @@ enum Command {
         id: i64,
     },
 
+    /// Fork a snippet by ID (creates a copy in your account)
+    Fork {
+        /// Snippet ID
+        id: i64,
+    },
+
     /// Generate shell completion (add `eval "$(snip complete zsh)"` to .zshrc)
     Complete { shell: clap_complete::Shell },
 }
@@ -428,17 +434,27 @@ async fn main() -> anyhow::Result<()> {
                     let author = snippet["author"].as_str().unwrap_or("unknown");
                     let views = snippet["views"].as_i64().unwrap_or(0);
                     let stars = snippet["stars"].as_i64().unwrap_or(0);
+                    let forks = snippet["forks"].as_i64().unwrap_or(0);
+                    let forked_from = snippet["forked_from"].as_i64();
 
-                    // Format: #42 | example (javascript) | alice | 5 views | 3 stars
+                    // Format: #42 | example (javascript) | alice | 5 views | 3 stars | 1 fork
+                    // Or: #42 | example (javascript) | alice | 5 views | 3 stars | forked from /s/7
                     let lang_part = if lang != "plaintext" && !lang.is_empty() {
                         format!(" ({})", lang)
                     } else {
                         String::new()
                     };
                     let desc_part = if desc.is_empty() { "untitled" } else { desc };
+                    let fork_part = if let Some(orig_id) = forked_from {
+                        format!(" | forked from /s/{}", orig_id)
+                    } else if forks > 0 {
+                        format!(" | {} fork{}", forks, if forks == 1 { "" } else { "s" })
+                    } else {
+                        String::new()
+                    };
                     println!(
-                        "#{} | {}{} | {} | {} views | {} stars",
-                        id, desc_part, lang_part, author, views, stars
+                        "#{} | {}{} | {} | {} views | {} stars{}",
+                        id, desc_part, lang_part, author, views, stars, fork_part
                     );
                     println!();
                     println!("{}", snippet["content"].as_str().unwrap_or(""));
@@ -474,13 +490,15 @@ async fn main() -> anyhow::Result<()> {
                 if snippets.is_empty() {
                     println!("No snippets found");
                 } else {
-                    // Table format: id  desc  author  views  stars  time
+                    // Table format: id  desc  author  views  stars  forks/time
                     for s in snippets.iter() {
                         let id = s["id"].as_i64().unwrap_or(0);
                         let desc = s["description"].as_str().unwrap_or("");
                         let author = s["author"].as_str().unwrap_or("unknown");
                         let views = s["views"].as_i64().unwrap_or(0);
                         let stars = s["stars"].as_i64().unwrap_or(0);
+                        let forks = s["forks"].as_i64().unwrap_or(0);
+                        let forked_from = s["forked_from"].as_i64();
                         let created_at = s["created_at"].as_str().unwrap_or("");
 
                         // Format description (truncate if too long)
@@ -495,9 +513,18 @@ async fn main() -> anyhow::Result<()> {
                         // Parse relative time
                         let time_ago = format_time_ago(created_at);
 
+                        // Show fork info: forked from #X or N forks, or just time
+                        let fork_info = if let Some(orig_id) = forked_from {
+                            format!("forked from #{}", orig_id)
+                        } else if forks > 0 {
+                            format!("{} forks · {}", forks, time_ago)
+                        } else {
+                            time_ago
+                        };
+
                         println!(
                             "#{:4}  {:30}  {:15}  {:1}v/*{:1}  {}",
-                            id, desc_fmt, author, views, stars, time_ago
+                            id, desc_fmt, author, views, stars, fork_info
                         );
                     }
                     println!();
@@ -613,6 +640,40 @@ async fn main() -> anyhow::Result<()> {
                 std::process::exit(1);
             } else if response.status() == 401 {
                 eprintln!("Unauthorized. Please login first.");
+                std::process::exit(1);
+            } else {
+                eprintln!("Error: {}", response.status());
+                std::process::exit(1);
+            }
+            Ok(())
+        }
+
+        Command::Fork { id } => {
+            let response = client
+                .post(format!("{}/api/snippets/{}/fork", server, id))
+                .header("X-API-Key", api_key)
+                .send()
+                .await?;
+
+            if response.status().is_success() {
+                let result: serde_json::Value = response.json().await?;
+                let forked_id = result["forked_id"].as_i64().unwrap_or(0);
+                let total = result["total_forks"].as_i64().unwrap_or(0);
+                println!(
+                    "Forked snippet {} as {}. Total forks: {}",
+                    id, forked_id, total
+                );
+            } else if response.status() == 400 {
+                eprintln!("Cannot fork your own snippet");
+                std::process::exit(1);
+            } else if response.status() == 404 {
+                eprintln!("Snippet {} not found", id);
+                std::process::exit(1);
+            } else if response.status() == 401 {
+                eprintln!("Unauthorized. Please login first.");
+                std::process::exit(1);
+            } else if response.status() == 429 {
+                eprintln!("Rate limit exceeded: 10 forks per minute");
                 std::process::exit(1);
             } else {
                 eprintln!("Error: {}", response.status());

@@ -210,7 +210,9 @@ pub async fn list_snippets(
             s.created_at,
             s.views,
             u.username as author,
-            (SELECT COUNT(*) FROM stars WHERE snippet_id = s.id) as stars
+            (SELECT COUNT(*) FROM stars WHERE snippet_id = s.id) as stars,
+            s.forks,
+            s.forked_from
         FROM snippets s
         JOIN users u ON s.user_id = u.id
         ORDER BY s.created_at DESC
@@ -274,7 +276,9 @@ pub async fn list_user_snippets(
             s.created_at,
             s.views,
             u.username as author,
-            (SELECT COUNT(*) FROM stars WHERE snippet_id = s.id) as stars
+            (SELECT COUNT(*) FROM stars WHERE snippet_id = s.id) as stars,
+            s.forks,
+            s.forked_from
         FROM snippets s
         JOIN users u ON s.user_id = u.id
         WHERE u.username = ?1
@@ -337,7 +341,9 @@ pub async fn get_snippet(
             s.created_at,
             s.views,
             u.username as author,
-            (SELECT COUNT(*) FROM stars WHERE snippet_id = s.id) as stars
+            (SELECT COUNT(*) FROM stars WHERE snippet_id = s.id) as stars,
+            s.forks,
+            s.forked_from
         FROM snippets s
         JOIN users u ON s.user_id = u.id
         WHERE s.id = ?1
@@ -484,7 +490,9 @@ pub async fn search_snippets(
             s.created_at,
             s.views,
             u.username as author,
-            (SELECT COUNT(*) FROM stars WHERE snippet_id = s.id) as stars
+            (SELECT COUNT(*) FROM stars WHERE snippet_id = s.id) as stars,
+            s.forks,
+            s.forked_from
         FROM snippets s
         JOIN users u ON s.user_id = u.id
         {}
@@ -963,5 +971,129 @@ pub async fn get_star_status(
         snippet_id: id,
         starred: user_starred,
         total_stars,
+    }))
+}
+
+pub async fn fork_snippet(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    axum::extract::Path(id): axum::extract::Path<i64>,
+) -> Result<Json<ForkResponse>, (StatusCode, String)> {
+    let pool = state.db.pool();
+
+    let api_key = headers
+        .get("x-api-key")
+        .and_then(|v| v.to_str().ok())
+        .ok_or((
+            StatusCode::UNAUTHORIZED,
+            "Missing X-API-Key header".to_string(),
+        ))?;
+
+    // Get user info
+    let user: Option<(i64,)> = sqlx::query_as("SELECT id FROM users WHERE api_key = ?1")
+        .bind(api_key)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Database error: {}", e),
+            )
+        })?;
+
+    let (user_id,) = user.ok_or((StatusCode::UNAUTHORIZED, "Invalid API key".to_string()))?;
+
+    // Rate limiting: 10 forks per minute per user
+    let allowed = state
+        .redis
+        .check_rate_limit("fork", &user_id.to_string(), 10, 60)
+        .await;
+
+    if !allowed {
+        return Err((
+            StatusCode::TOO_MANY_REQUESTS,
+            "Rate limit exceeded: 10 forks per minute".to_string(),
+        ));
+    }
+
+    // Get the snippet to fork
+    let snippet: Option<(String, Option<String>, Option<String>, i64)> = sqlx::query_as(
+        "SELECT content, description, language, user_id FROM snippets WHERE id = ?1",
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await
+    .map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Database error: {}", e),
+        )
+    })?;
+
+    let (content, description, language, owner_id) =
+        snippet.ok_or((StatusCode::NOT_FOUND, "Snippet not found".to_string()))?;
+
+    // Cannot fork your own snippet
+    if owner_id == user_id {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Cannot fork your own snippet".to_string(),
+        ));
+    }
+
+    // Create the forked snippet
+    let result: Result<(i64,), sqlx::Error> = sqlx::query_as(
+        r#"
+        INSERT INTO snippets (user_id, content, description, language, forked_from)
+        VALUES (?1, ?2, ?3, ?4, ?5)
+        RETURNING id
+        "#,
+    )
+    .bind(user_id)
+    .bind(&content)
+    .bind(&description)
+    .bind(&language)
+    .bind(id)
+    .fetch_one(pool)
+    .await;
+
+    let new_snippet_id = match result {
+        Ok((id,)) => id,
+        Err(e) => {
+            return Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Database error: {}", e),
+            ));
+        }
+    };
+
+    // Increment forks count on original snippet
+    sqlx::query("UPDATE snippets SET forks = forks + 1 WHERE id = ?1")
+        .bind(id)
+        .execute(pool)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Database error: {}", e),
+            )
+        })?;
+
+    // Get total forks
+    let total_forks: i64 = sqlx::query_scalar("SELECT forks FROM snippets WHERE id = ?1")
+        .bind(id)
+        .fetch_one(pool)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Database error: {}", e),
+            )
+        })?;
+
+    Ok(Json(ForkResponse {
+        snippet_id: id,
+        forked_id: new_snippet_id,
+        total_forks,
     }))
 }
