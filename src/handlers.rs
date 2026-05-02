@@ -123,6 +123,68 @@ const SNIPPET_BASE_SQL: &str = r#"
     JOIN users u ON s.user_id = u.id
 "#;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Pagination {
+    page: i64,
+    limit: i64,
+    offset: i64,
+}
+
+impl Pagination {
+    fn new(page: i64, limit: i64) -> Self {
+        let page = page.max(1);
+        let limit = limit.clamp(1, 100);
+        let offset = (page - 1) * limit;
+
+        Self {
+            page,
+            limit,
+            offset,
+        }
+    }
+}
+
+#[derive(Debug, Default, PartialEq, Eq)]
+struct SearchFilters {
+    where_clause: String,
+    params: Vec<String>,
+}
+
+impl SearchFilters {
+    fn from_query(query: &SearchQuery) -> Self {
+        let mut conditions = Vec::new();
+        let mut params = Vec::new();
+
+        if let Some(search_term) = &query.q
+            && !search_term.is_empty()
+        {
+            let pattern = format!("%{}%", search_term);
+            conditions.push("(s.content LIKE ? OR s.description LIKE ?)".to_string());
+            params.push(pattern.clone());
+            params.push(pattern);
+        }
+
+        if let Some(lang) = &query.lang
+            && !lang.is_empty()
+            && lang != "all"
+        {
+            conditions.push("s.language = ?".to_string());
+            params.push(lang.to_lowercase());
+        }
+
+        let where_clause = if conditions.is_empty() {
+            String::new()
+        } else {
+            format!("WHERE {}", conditions.join(" AND "))
+        };
+
+        Self {
+            where_clause,
+            params,
+        }
+    }
+}
+
 async fn increment_views(state: &AppState, id: i64) -> Result<Option<i64>, AppError> {
     let pool = state.db.pool();
     if state.redis.is_enabled() {
@@ -139,6 +201,14 @@ async fn increment_views(state: &AppState, id: i64) -> Result<Option<i64>, AppEr
 
 async fn get_total_stars(pool: &sqlx::SqlitePool, snippet_id: i64) -> Result<i64, AppError> {
     sqlx::query_scalar("SELECT COUNT(*) FROM stars WHERE snippet_id = ?1")
+        .bind(snippet_id)
+        .fetch_one(pool)
+        .await
+        .map_err(Into::into)
+}
+
+async fn snippet_exists(pool: &sqlx::SqlitePool, snippet_id: i64) -> Result<bool, AppError> {
+    sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM snippets WHERE id = ?1)")
         .bind(snippet_id)
         .fetch_one(pool)
         .await
@@ -261,9 +331,7 @@ pub async fn list_snippets(
     Query(query): Query<PaginationQuery>,
 ) -> Result<Json<ListSnippetsResponse>, AppError> {
     let pool = state.db.pool();
-    let page = query.page.max(1);
-    let limit = query.limit.clamp(1, 100);
-    let offset = (page - 1) * limit;
+    let pagination = Pagination::new(query.page, query.limit);
 
     let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM snippets")
         .fetch_one(pool)
@@ -273,16 +341,16 @@ pub async fn list_snippets(
         "{} ORDER BY s.created_at DESC LIMIT ?1 OFFSET ?2",
         SNIPPET_BASE_SQL
     ))
-    .bind(limit)
-    .bind(offset)
+    .bind(pagination.limit)
+    .bind(pagination.offset)
     .fetch_all(pool)
     .await?;
 
     Ok(Json(ListSnippetsResponse {
         snippets: rows,
         total,
-        page,
-        limit,
+        page: pagination.page,
+        limit: pagination.limit,
     }))
 }
 
@@ -292,9 +360,7 @@ pub async fn list_user_snippets(
     Query(query): Query<PaginationQuery>,
 ) -> Result<Json<ListSnippetsResponse>, AppError> {
     let pool = state.db.pool();
-    let page = query.page.max(1);
-    let limit = query.limit.clamp(1, 100);
-    let offset = (page - 1) * limit;
+    let pagination = Pagination::new(query.page, query.limit);
 
     let total: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM snippets s JOIN users u ON s.user_id = u.id WHERE u.username = ?1",
@@ -308,16 +374,16 @@ pub async fn list_user_snippets(
         SNIPPET_BASE_SQL
     ))
     .bind(&username)
-    .bind(limit)
-    .bind(offset)
+    .bind(pagination.limit)
+    .bind(pagination.offset)
     .fetch_all(pool)
     .await?;
 
     Ok(Json(ListSnippetsResponse {
         snippets: rows,
         total,
-        page,
-        limit,
+        page: pagination.page,
+        limit: pagination.limit,
     }))
 }
 
@@ -369,61 +435,38 @@ pub async fn search_snippets(
     Query(query): Query<SearchQuery>,
 ) -> Result<Json<ListSnippetsResponse>, AppError> {
     let pool = state.db.pool();
-    let page = query.page.max(1);
-    let limit = query.limit.clamp(1, 100);
-    let offset = (page - 1) * limit;
-
-    let mut conditions = Vec::new();
-    let mut params: Vec<String> = Vec::new();
-
-    if let Some(search_term) = &query.q
-        && !search_term.is_empty()
-    {
-        let pattern = format!("%{}%", search_term);
-        conditions.push("(s.content LIKE ? OR s.description LIKE ?)".to_string());
-        params.push(pattern.clone());
-        params.push(pattern);
-    }
-
-    if let Some(lang) = &query.lang
-        && !lang.is_empty()
-        && lang != "all"
-    {
-        conditions.push("s.language = ?".to_string());
-        params.push(lang.to_lowercase());
-    }
-
-    let where_clause = if conditions.is_empty() {
-        String::new()
-    } else {
-        format!("WHERE {}", conditions.join(" AND "))
-    };
+    let pagination = Pagination::new(query.page, query.limit);
+    let filters = SearchFilters::from_query(&query);
 
     let count_sql = format!(
         "SELECT COUNT(*) FROM snippets s JOIN users u ON s.user_id = u.id {}",
-        where_clause
+        filters.where_clause
     );
     let mut count_query = sqlx::query_scalar(&count_sql);
-    for param in &params {
+    for param in &filters.params {
         count_query = count_query.bind(param);
     }
     let total: i64 = count_query.fetch_one(pool).await?;
 
     let data_sql = format!(
         "{} {} ORDER BY s.created_at DESC LIMIT ? OFFSET ?",
-        SNIPPET_BASE_SQL, where_clause
+        SNIPPET_BASE_SQL, filters.where_clause
     );
     let mut data_query = sqlx::query_as::<_, SnippetWithAuthor>(&data_sql);
-    for param in &params {
+    for param in &filters.params {
         data_query = data_query.bind(param);
     }
-    let rows: Vec<SnippetWithAuthor> = data_query.bind(limit).bind(offset).fetch_all(pool).await?;
+    let rows: Vec<SnippetWithAuthor> = data_query
+        .bind(pagination.limit)
+        .bind(pagination.offset)
+        .fetch_all(pool)
+        .await?;
 
     Ok(Json(ListSnippetsResponse {
         snippets: rows,
         total,
-        page,
-        limit,
+        page: pagination.page,
+        limit: pagination.limit,
     }))
 }
 
@@ -532,11 +575,7 @@ pub async fn delete_snippet(
         .await?;
 
     if result.rows_affected() == 0 {
-        let exists: bool =
-            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM snippets WHERE id = ?1)")
-                .bind(id)
-                .fetch_one(pool)
-                .await?;
+        let exists = snippet_exists(pool, id).await?;
 
         return if exists {
             Err(AppError::new(
@@ -558,11 +597,7 @@ pub async fn star_snippet(
 ) -> Result<Json<StarResponse>, AppError> {
     let pool = state.db.pool();
 
-    let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM snippets WHERE id = ?1)")
-        .bind(id)
-        .fetch_one(pool)
-        .await?;
-    if !exists {
+    if !snippet_exists(pool, id).await? {
         return Err(AppError::not_found("Snippet not found"));
     }
 
@@ -687,4 +722,64 @@ pub async fn fork_snippet(
         forked_id: new_id,
         total_forks,
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pagination_normalizes_page_and_limit() {
+        assert_eq!(
+            Pagination::new(0, 500),
+            Pagination {
+                page: 1,
+                limit: 100,
+                offset: 0,
+            }
+        );
+        assert_eq!(
+            Pagination::new(3, -5),
+            Pagination {
+                page: 3,
+                limit: 1,
+                offset: 2,
+            }
+        );
+    }
+
+    #[test]
+    fn search_filters_empty_when_no_query_provided() {
+        let query = SearchQuery {
+            page: 1,
+            limit: 10,
+            q: None,
+            lang: None,
+        };
+
+        assert_eq!(SearchFilters::from_query(&query), SearchFilters::default());
+    }
+
+    #[test]
+    fn search_filters_include_content_and_language_conditions() {
+        let query = SearchQuery {
+            page: 1,
+            limit: 10,
+            q: Some("main".to_string()),
+            lang: Some("Rust".to_string()),
+        };
+
+        assert_eq!(
+            SearchFilters::from_query(&query),
+            SearchFilters {
+                where_clause: "WHERE (s.content LIKE ? OR s.description LIKE ?) AND s.language = ?"
+                    .to_string(),
+                params: vec![
+                    "%main%".to_string(),
+                    "%main%".to_string(),
+                    "rust".to_string(),
+                ],
+            }
+        );
+    }
 }
