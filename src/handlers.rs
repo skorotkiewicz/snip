@@ -5,10 +5,11 @@ use axum::{
     http::{StatusCode, request::Parts},
     response::{IntoResponse, Response},
 };
-use bcrypt::{DEFAULT_COST, hash, verify};
+use bcrypt::{hash, verify};
 use uuid::Uuid;
 
 use crate::{AppState, models::*};
+use snip::config;
 
 // ==========================================
 // Error Handling
@@ -24,14 +25,14 @@ impl AppError {
     pub fn internal(msg: impl Into<String>) -> Self {
         Self(StatusCode::INTERNAL_SERVER_ERROR, msg.into())
     }
-    pub fn bad_request(msg: &str) -> Self {
-        Self(StatusCode::BAD_REQUEST, msg.to_string())
+    pub fn bad_request(msg: impl Into<String>) -> Self {
+        Self(StatusCode::BAD_REQUEST, msg.into())
     }
-    pub fn unauthorized(msg: &str) -> Self {
-        Self(StatusCode::UNAUTHORIZED, msg.to_string())
+    pub fn unauthorized(msg: impl Into<String>) -> Self {
+        Self(StatusCode::UNAUTHORIZED, msg.into())
     }
-    pub fn not_found(msg: &str) -> Self {
-        Self(StatusCode::NOT_FOUND, msg.to_string())
+    pub fn not_found(msg: impl Into<String>) -> Self {
+        Self(StatusCode::NOT_FOUND, msg.into())
     }
 }
 
@@ -227,7 +228,12 @@ pub async fn register_user(
 
     if !state
         .redis
-        .check_rate_limit("register", &req.username, 5, 3600)
+        .check_rate_limit(
+            "register",
+            &req.username,
+            config::rate_limit::REGISTER_MAX_REQUESTS,
+            config::rate_limit::REGISTRATION_WINDOW_SECS,
+        )
         .await
     {
         return Err(AppError::new(
@@ -236,16 +242,18 @@ pub async fn register_user(
         ));
     }
 
-    if req.username.len() < 3 || req.username.len() > 32 {
+    if req.username.len() < config::limits::MIN_USERNAME_LENGTH
+        || req.username.len() > config::limits::MAX_USERNAME_LENGTH
+    {
         return Err(AppError::bad_request("Username must be 3-32 characters"));
     }
-    if req.password.len() < 6 {
+    if req.password.len() < config::limits::MIN_PASSWORD_LENGTH {
         return Err(AppError::bad_request(
             "Password must be at least 6 characters",
         ));
     }
 
-    let password_hash = hash(&req.password, DEFAULT_COST)?;
+    let password_hash = hash(&req.password, config::DEFAULT_COST)?;
     let api_key = Uuid::new_v4().to_string();
 
     let result = sqlx::query_scalar(
@@ -280,7 +288,12 @@ pub async fn create_snippet(
 
     if !state
         .redis
-        .check_rate_limit("snippet_create", &user.id.to_string(), 10, 60)
+        .check_rate_limit(
+            "snippet_create",
+            &user.id.to_string(),
+            config::rate_limit::SNIPPET_CREATE_MAX_REQUESTS,
+            config::rate_limit::DEFAULT_WINDOW_SECS,
+        )
         .await
     {
         return Err(AppError::new(
@@ -292,20 +305,24 @@ pub async fn create_snippet(
     if req.content.is_empty() {
         return Err(AppError::bad_request("Content cannot be empty"));
     }
-    if req.content.len() > 5000 {
+    if req.content.len() > config::limits::MAX_CONTENT_LENGTH {
         return Err(AppError::bad_request(
             "Content exceeds maximum length of 5000 characters",
         ));
     }
-    if req.description.as_ref().map(|d| d.len()).unwrap_or(0) > 255 {
+    if req.description.as_ref().map(|d| d.len()).unwrap_or(0)
+        > config::limits::MAX_DESCRIPTION_LENGTH
+    {
         return Err(AppError::bad_request(
             "Description exceeds maximum length of 255 characters",
         ));
     }
 
-    let validated_lang = CreateSnippetRequest::validate_language(&req.language).ok_or_else(|| {
-        AppError::bad_request("Invalid language. Valid: plaintext, bash, c, cpp, csharp, css, go, html, java, javascript, json, kotlin, lua, markdown, php, python, ruby, rust, scala, shell, sql, swift, typescript, yaml, zig")
-    })?;
+    let validated_lang =
+        CreateSnippetRequest::validate_language(&req.language).ok_or_else(|| {
+            let langs = config::SUPPORTED_LANGUAGES.join(", ");
+            AppError::bad_request(format!("Invalid language. Valid: {}", langs))
+        })?;
 
     let (id, created_at): (i64, chrono::DateTime<chrono::Utc>) = sqlx::query_as(
         r#"INSERT INTO snippets (user_id, content, description, language) VALUES (?1, ?2, ?3, ?4) RETURNING id, created_at"#,
@@ -478,7 +495,12 @@ pub async fn login(
 
     if !state
         .redis
-        .check_rate_limit("login", &req.username, 10, 60)
+        .check_rate_limit(
+            "login",
+            &req.username,
+            config::rate_limit::LOGIN_MAX_REQUESTS,
+            config::rate_limit::DEFAULT_WINDOW_SECS,
+        )
         .await
     {
         return Err(AppError::new(
@@ -542,13 +564,13 @@ pub async fn change_password(
     if !valid {
         return Err(AppError::unauthorized("Invalid old password"));
     }
-    if req.new_password.len() < 6 {
+    if req.new_password.len() < config::limits::MIN_PASSWORD_LENGTH {
         return Err(AppError::bad_request(
             "New password must be at least 6 characters",
         ));
     }
 
-    let new_password_hash = hash(&req.new_password, DEFAULT_COST)?;
+    let new_password_hash = hash(&req.new_password, config::DEFAULT_COST)?;
     sqlx::query("UPDATE users SET password_hash = ?1 WHERE id = ?2")
         .bind(&new_password_hash)
         .bind(user.id)
@@ -672,7 +694,12 @@ pub async fn fork_snippet(
 
     if !state
         .redis
-        .check_rate_limit("fork", &user.id.to_string(), 10, 60)
+        .check_rate_limit(
+            "fork",
+            &user.id.to_string(),
+            config::rate_limit::FORK_MAX_REQUESTS,
+            config::rate_limit::DEFAULT_WINDOW_SECS,
+        )
         .await
     {
         return Err(AppError::new(

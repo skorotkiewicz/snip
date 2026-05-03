@@ -257,7 +257,7 @@ impl Context {
                     .ok()
                     .filter(|s| !s.is_empty())
             })
-            .unwrap_or_else(|| "http://localhost:3000".to_string());
+            .unwrap_or_else(|| snip::config::cli::DEFAULT_SERVER_URL.to_string());
 
         let api_key = args
             .api_key

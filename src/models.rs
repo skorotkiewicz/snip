@@ -1,5 +1,6 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use snip::config;
 
 #[derive(Debug, Serialize)]
 #[allow(dead_code)]
@@ -90,39 +91,11 @@ pub struct CreateSnippetRequest {
 
 impl CreateSnippetRequest {
     pub fn validate_language(lang: &Option<String>) -> Option<String> {
-        const VALID_LANGS: &[&str] = &[
-            "plaintext",
-            "bash",
-            "c",
-            "cpp",
-            "csharp",
-            "css",
-            "go",
-            "html",
-            "java",
-            "javascript",
-            "json",
-            "kotlin",
-            "lua",
-            "markdown",
-            "php",
-            "python",
-            "ruby",
-            "rust",
-            "scala",
-            "shell",
-            "sql",
-            "swift",
-            "typescript",
-            "yaml",
-            "zig",
-        ];
-
         match lang {
             None => Some("plaintext".to_string()),
             Some(l) => {
                 let normalized = l.to_lowercase();
-                if VALID_LANGS.contains(&normalized.as_str()) {
+                if config::SUPPORTED_LANGUAGES.contains(&normalized.as_str()) {
                     Some(normalized)
                 } else {
                     None

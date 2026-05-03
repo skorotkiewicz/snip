@@ -3,6 +3,10 @@ name = "snip"
 version = "0.2.5"
 edition = "2024"
 
+[lib]
+name = "snip"
+path = "src/lib.rs"
+
 [[bin]]
 name = "snipped"
 path = "src/main.rs"

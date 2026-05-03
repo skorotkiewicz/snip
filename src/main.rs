@@ -9,6 +9,8 @@ use std::time::Duration;
 use tower_http::cors::CorsLayer;
 use tracing_subscriber::fmt;
 
+use snip::config;
+
 mod db;
 mod handlers;
 mod models;
@@ -38,8 +40,8 @@ async fn main() -> anyhow::Result<()> {
 
     fmt::init();
 
-    let database_url =
-        std::env::var("DATABASE_URL").unwrap_or_else(|_| "sqlite:snip.db".to_string());
+    let database_url = std::env::var("DATABASE_URL")
+        .unwrap_or_else(|_| config::server::DEFAULT_DATABASE_URL.to_string());
 
     // Parse connection options
     let opts = SqliteConnectOptions::from_str(&database_url)?;
@@ -56,19 +58,23 @@ async fn main() -> anyhow::Result<()> {
         std::fs::File::create(filename)?;
     }
 
-    let host = std::env::var("SNIP_HOST").unwrap_or_else(|_| "0.0.0.0".to_string());
-    let port = std::env::var("SNIP_PORT").unwrap_or_else(|_| "3000".to_string());
+    let host =
+        std::env::var("SNIP_HOST").unwrap_or_else(|_| config::server::DEFAULT_HOST.to_string());
+    let port =
+        std::env::var("SNIP_PORT").unwrap_or_else(|_| config::server::DEFAULT_PORT.to_string());
     let bind_addr = format!("{}:{}", host, port);
 
     let pool = SqlitePoolOptions::new()
-        .max_connections(5)
+        .max_connections(config::database::MAX_CONNECTIONS)
         .connect_with(opts)
         .await?;
 
     sqlx::migrate!("./migrations").run(&pool).await?;
 
     // Initialize Redis
-    let redis_url = std::env::var("REDIS_URL").ok();
+    let redis_url = std::env::var("REDIS_URL")
+        .ok()
+        .or_else(|| config::server::DEFAULT_REDIS_URL.map(|s| s.to_string()));
     let redis = RedisCache::new(redis_url).await;
 
     let state = AppState {
@@ -80,7 +86,9 @@ async fn main() -> anyhow::Result<()> {
     if redis.is_enabled() {
         let db_for_flush = state.db.clone();
         tokio::spawn(async move {
-            let mut interval = tokio::time::interval(Duration::from_secs(60));
+            let mut interval = tokio::time::interval(Duration::from_secs(
+                config::rate_limit::VIEW_COUNTER_FLUSH_INTERVAL_SECS,
+            ));
             loop {
                 interval.tick().await;
                 let counters = redis.flush_view_counters("views").await;
