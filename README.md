@@ -149,14 +149,35 @@ sudo systemctl enable --now snip
 
 ```yaml
 services:
+  valkey:
+    image: valkey/valkey:9.0.3
+    container_name: snip-valkey
+    ports:
+      - "6379:6379"
+    volumes:
+      - valkey-data:/data
+    restart: unless-stopped
+
   snip:
+    build: .
+    container_name: snip
     image: skorotkiewicz/snip:latest
     ports:
       - "3000:3000"
     volumes:
-      - ./data:/data
+      # - ./data:/data
+      - snip_data:/data
     environment:
-      - DATABASE_URL=sqlite:/data/snipped.db
+      - DATABASE_URL=sqlite:/data/snip.db
+      - REDIS_URL=redis://snip-valkey:6379
+      - RUST_LOG=info
+    depends_on:
+      - valkey
+    restart: unless-stopped
+
+volumes:
+  snip_data:
+  valkey-data:
 ```
 
 ## API Reference
