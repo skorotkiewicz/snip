@@ -148,10 +148,9 @@ sudo systemctl enable --now snip
 ### Docker Compose
 
 ```yaml
-version: '3'
 services:
   snip:
-    image: ghcr.io/skorotkiewicz/snip
+    image: skorotkiewicz/snip:latest
     ports:
       - "3000:3000"
     volumes:
