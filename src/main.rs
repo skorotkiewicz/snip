@@ -4,8 +4,10 @@ use axum::{
     routing::{delete, get, post},
 };
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
+use std::net::SocketAddr;
 use std::str::FromStr;
 use std::time::Duration;
+use tower_governor::{GovernorLayer, governor::GovernorConfigBuilder};
 use tower_http::{compression::CompressionLayer, cors::CorsLayer};
 use tracing_subscriber::fmt;
 
@@ -114,6 +116,13 @@ async fn main() -> anyhow::Result<()> {
         });
     }
 
+    // Configure global rate limiting: 10 requests per second per IP with burst of 20
+    let governor_conf = GovernorConfigBuilder::default()
+        .per_second(10) // 10 requests
+        .burst_size(20) // 20 burst
+        .finish()
+        .unwrap();
+
     let app = Router::new()
         .route("/", get(serve_index))
         .route("/u/{username}", get(serve_index))
@@ -134,12 +143,17 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/search", get(search_snippets))
         .route("/api/users/{username}/snippets", get(list_user_snippets))
         .layer(CompressionLayer::new())
+        .layer(GovernorLayer::new(governor_conf))
         .layer(CorsLayer::permissive())
         .with_state(state);
 
     let listener = tokio::net::TcpListener::bind(&bind_addr).await?;
     tracing::info!("Server running on http://{}:{}", host, port);
-    axum::serve(listener, app).await?;
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .await?;
 
     Ok(())
 }
