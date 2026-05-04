@@ -6,6 +6,8 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use bcrypt::{hash, verify};
+use sqlx::{QueryBuilder, Sqlite};
+use std::collections::HashSet;
 use uuid::Uuid;
 
 use crate::{AppState, models::*};
@@ -208,6 +210,53 @@ async fn get_total_stars(pool: &sqlx::SqlitePool, snippet_id: i64) -> Result<i64
         .map_err(Into::into)
 }
 
+async fn get_starred_snippet_ids(
+    pool: &sqlx::SqlitePool,
+    user_id: Option<i64>,
+    snippet_ids: &[i64],
+) -> Result<HashSet<i64>, AppError> {
+    let Some(user_id) = user_id else {
+        return Ok(HashSet::new());
+    };
+    if snippet_ids.is_empty() {
+        return Ok(HashSet::new());
+    }
+
+    let mut query = QueryBuilder::<Sqlite>::new("SELECT snippet_id FROM stars WHERE user_id = ");
+    query.push_bind(user_id);
+    query.push(" AND snippet_id IN (");
+
+    let mut separated = query.separated(", ");
+    for snippet_id in snippet_ids {
+        separated.push_bind(snippet_id);
+    }
+    separated.push_unseparated(")");
+
+    let rows: Vec<(i64,)> = query.build_query_as().fetch_all(pool).await?;
+    Ok(rows.into_iter().map(|(snippet_id,)| snippet_id).collect())
+}
+
+fn build_snippet_responses(
+    rows: Vec<SnippetWithAuthor>,
+    starred_ids: &HashSet<i64>,
+) -> Vec<SnippetResponse> {
+    rows.into_iter()
+        .map(|row| SnippetResponse {
+            starred: starred_ids.contains(&row.id),
+            id: row.id,
+            content: row.content,
+            description: row.description,
+            language: row.language,
+            created_at: row.created_at,
+            author: row.author,
+            views: row.views,
+            stars: row.stars,
+            forks: row.forks,
+            forked_from: row.forked_from,
+        })
+        .collect()
+}
+
 async fn snippet_exists(pool: &sqlx::SqlitePool, snippet_id: i64) -> Result<bool, AppError> {
     sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM snippets WHERE id = ?1)")
         .bind(snippet_id)
@@ -345,6 +394,7 @@ pub async fn create_snippet(
 
 pub async fn list_snippets(
     State(state): State<AppState>,
+    opt_user: OptionalAuthUser,
     Query(query): Query<PaginationQuery>,
 ) -> Result<Json<ListSnippetsResponse>, AppError> {
     let pool = state.db.pool();
@@ -362,9 +412,12 @@ pub async fn list_snippets(
     .bind(pagination.offset)
     .fetch_all(pool)
     .await?;
+    let snippet_ids = rows.iter().map(|row| row.id).collect::<Vec<_>>();
+    let starred_ids =
+        get_starred_snippet_ids(pool, opt_user.0.map(|user| user.id), &snippet_ids).await?;
 
     Ok(Json(ListSnippetsResponse {
-        snippets: rows,
+        snippets: build_snippet_responses(rows, &starred_ids),
         total,
         page: pagination.page,
         limit: pagination.limit,
@@ -373,6 +426,7 @@ pub async fn list_snippets(
 
 pub async fn list_user_snippets(
     State(state): State<AppState>,
+    opt_user: OptionalAuthUser,
     Path(username): Path<String>,
     Query(query): Query<PaginationQuery>,
 ) -> Result<Json<ListSnippetsResponse>, AppError> {
@@ -395,9 +449,12 @@ pub async fn list_user_snippets(
     .bind(pagination.offset)
     .fetch_all(pool)
     .await?;
+    let snippet_ids = rows.iter().map(|row| row.id).collect::<Vec<_>>();
+    let starred_ids =
+        get_starred_snippet_ids(pool, opt_user.0.map(|user| user.id), &snippet_ids).await?;
 
     Ok(Json(ListSnippetsResponse {
-        snippets: rows,
+        snippets: build_snippet_responses(rows, &starred_ids),
         total,
         page: pagination.page,
         limit: pagination.limit,
@@ -406,8 +463,9 @@ pub async fn list_user_snippets(
 
 pub async fn get_snippet(
     State(state): State<AppState>,
+    opt_user: OptionalAuthUser,
     Path(id): Path<i64>,
-) -> Result<Json<SnippetWithAuthor>, AppError> {
+) -> Result<Json<SnippetResponse>, AppError> {
     let pool = state.db.pool();
     let redis_count = increment_views(&state, id).await?;
 
@@ -422,7 +480,14 @@ pub async fn get_snippet(
         snippet.views += redis_views;
     }
 
-    Ok(Json(snippet))
+    let starred_ids =
+        get_starred_snippet_ids(pool, opt_user.0.map(|user| user.id), &[snippet.id]).await?;
+    let response = build_snippet_responses(vec![snippet], &starred_ids)
+        .into_iter()
+        .next()
+        .ok_or_else(|| AppError::internal("Failed to build snippet response"))?;
+
+    Ok(Json(response))
 }
 
 pub async fn get_raw_snippet(
@@ -449,6 +514,7 @@ pub async fn get_raw_snippet(
 
 pub async fn search_snippets(
     State(state): State<AppState>,
+    opt_user: OptionalAuthUser,
     Query(query): Query<SearchQuery>,
 ) -> Result<Json<ListSnippetsResponse>, AppError> {
     let pool = state.db.pool();
@@ -478,9 +544,12 @@ pub async fn search_snippets(
         .bind(pagination.offset)
         .fetch_all(pool)
         .await?;
+    let snippet_ids = rows.iter().map(|row| row.id).collect::<Vec<_>>();
+    let starred_ids =
+        get_starred_snippet_ids(pool, opt_user.0.map(|user| user.id), &snippet_ids).await?;
 
     Ok(Json(ListSnippetsResponse {
-        snippets: rows,
+        snippets: build_snippet_responses(rows, &starred_ids),
         total,
         page: pagination.page,
         limit: pagination.limit,
@@ -754,6 +823,8 @@ pub async fn fork_snippet(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::Utc;
+    use std::collections::HashSet;
 
     #[test]
     fn pagination_normalizes_page_and_limit() {
@@ -808,5 +879,66 @@ mod tests {
                 ],
             }
         );
+    }
+
+    #[test]
+    fn build_snippet_responses_marks_matching_snippets_as_starred() {
+        let created_at = Utc::now();
+        let rows = vec![
+            SnippetWithAuthor {
+                id: 10,
+                content: "fn main() {}".to_string(),
+                description: Some("first".to_string()),
+                language: Some("rust".to_string()),
+                created_at,
+                author: "alice".to_string(),
+                views: 1,
+                stars: 3,
+                forks: 0,
+                forked_from: None,
+            },
+            SnippetWithAuthor {
+                id: 11,
+                content: "puts 1".to_string(),
+                description: Some("second".to_string()),
+                language: Some("ruby".to_string()),
+                created_at,
+                author: "bob".to_string(),
+                views: 2,
+                stars: 4,
+                forks: 1,
+                forked_from: Some(9),
+            },
+        ];
+        let starred_ids = HashSet::from([11]);
+
+        let responses = build_snippet_responses(rows, &starred_ids);
+
+        assert_eq!(responses.len(), 2);
+        assert!(!responses[0].starred);
+        assert!(responses[1].starred);
+        assert_eq!(responses[1].forked_from, Some(9));
+    }
+
+    #[test]
+    fn build_snippet_responses_defaults_to_unstarred_without_matches() {
+        let rows = vec![SnippetWithAuthor {
+            id: 42,
+            content: "echo hi".to_string(),
+            description: None,
+            language: Some("bash".to_string()),
+            created_at: Utc::now(),
+            author: "carol".to_string(),
+            views: 0,
+            stars: 0,
+            forks: 0,
+            forked_from: None,
+        }];
+
+        let responses = build_snippet_responses(rows, &HashSet::new());
+
+        assert_eq!(responses.len(), 1);
+        assert!(!responses[0].starred);
+        assert_eq!(responses[0].author, "carol");
     }
 }

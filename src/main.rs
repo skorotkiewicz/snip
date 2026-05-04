@@ -6,7 +6,7 @@ use axum::{
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use std::str::FromStr;
 use std::time::Duration;
-use tower_http::cors::CorsLayer;
+use tower_http::{compression::CompressionLayer, cors::CorsLayer};
 use tracing_subscriber::fmt;
 
 use snip::config;
@@ -133,6 +133,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/snippets/{id}/fork", post(fork_snippet))
         .route("/api/search", get(search_snippets))
         .route("/api/users/{username}/snippets", get(list_user_snippets))
+        .layer(CompressionLayer::new())
         .layer(CorsLayer::permissive())
         .with_state(state);
 

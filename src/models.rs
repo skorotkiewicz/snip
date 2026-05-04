@@ -82,6 +82,21 @@ pub struct SnippetWithAuthor {
     pub forked_from: Option<i64>,
 }
 
+#[derive(Debug, Serialize)]
+pub struct SnippetResponse {
+    pub id: i64,
+    pub content: String,
+    pub description: Option<String>,
+    pub language: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub author: String,
+    pub views: i64,
+    pub stars: i64,
+    pub starred: bool,
+    pub forks: i64,
+    pub forked_from: Option<i64>,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct CreateSnippetRequest {
     pub content: String,
@@ -142,7 +157,7 @@ fn default_limit() -> i64 {
 
 #[derive(Debug, Serialize)]
 pub struct ListSnippetsResponse {
-    pub snippets: Vec<SnippetWithAuthor>,
+    pub snippets: Vec<SnippetResponse>,
     pub total: i64,
     pub page: i64,
     pub limit: i64,

@@ -613,21 +613,6 @@ pub const INDEX_HTML: &str = r##"
         return fetch(url, opts);
     }
 
-    async function fetchStarStatuses(snippets) {
-        const { apiKey } = getAuth();
-        if (!apiKey || !snippets.length) return;
-        await Promise.all(snippets.map(async s => {
-            try {
-                const resp = await apiFetch(`/api/snippets/${s.id}/star`, { apiKey });
-                if (resp.ok) {
-                    const d = await resp.json();
-                    s.starred = d.starred;
-                    s.stars = d.total_stars;
-                }
-            } catch (e) { /* ignore */ }
-        }));
-    }
-
     // ===== Rendering =====
     function renderSnippets(snippets) {
         const container = document.getElementById('snippets');
@@ -683,8 +668,9 @@ pub const INDEX_HTML: &str = r##"
     // ===== Data Loading =====
     async function loadSingleSnippet() {
         const container = document.getElementById('snippets');
+        const { apiKey } = getAuth();
         try {
-            const resp = await fetch(`/api/snippets/${state.snippetId}`);
+            const resp = await apiFetch(`/api/snippets/${state.snippetId}`, { apiKey });
             if (!resp.ok) {
                 container.innerHTML = resp.status === 404
                     ? '<div class="empty">Snippet not found</div>'
@@ -697,7 +683,6 @@ pub const INDEX_HTML: &str = r##"
             document.getElementById('search-box').hidden = true;
             document.getElementById('auth-box').hidden = true;
             document.getElementById('pagination').innerHTML = '';
-            await fetchStarStatuses([snippet]);
             renderSnippets([snippet]);
         } catch (e) {
             container.innerHTML = '<div class="empty">Error loading snippet</div>';
@@ -707,6 +692,7 @@ pub const INDEX_HTML: &str = r##"
     async function loadSnippets(page = 1) {
         state.page = page;
         const container = document.getElementById('snippets');
+        const { apiKey } = getAuth();
         let url;
         if (state.searchQuery || (state.searchLang && state.searchLang !== 'all')) {
             const params = new URLSearchParams({ page, limit: PER_PAGE });
@@ -719,10 +705,9 @@ pub const INDEX_HTML: &str = r##"
             url = `/api/snippets?page=${page}&limit=${PER_PAGE}`;
         }
         try {
-            const resp = await fetch(url);
+            const resp = await apiFetch(url, { apiKey });
             const data = await resp.json();
             state.totalPages = Math.ceil(data.total / PER_PAGE) || 1;
-            await fetchStarStatuses(data.snippets);
             renderSnippets(data.snippets);
             renderPagination();
         } catch (e) {
