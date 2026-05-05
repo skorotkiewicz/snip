@@ -7,7 +7,7 @@ pub mod server {
     /// Default port to listen on (can be overridden via SNIP_PORT env var)
     pub const DEFAULT_PORT: &str = "3000";
     /// Default database URL (can be overridden via DATABASE_URL env var)
-    pub const DEFAULT_DATABASE_URL: &str = "sqlite:snip.db";
+    pub const DEFAULT_DATABASE_URL: &str = "sqlite:/data/snip.db";
     /// Default Redis URL (can be overridden via REDIS_URL env var)
     pub const DEFAULT_REDIS_URL: Option<&str> = None;
 }
@@ -24,6 +24,8 @@ pub mod limits {
     pub const MAX_USERNAME_LENGTH: usize = 32;
     /// Minimum password length
     pub const MIN_PASSWORD_LENGTH: usize = 6;
+    /// Maximum comment length in characters
+    pub const MAX_COMMENT_LENGTH: usize = 1000;
 }
 
 /// Rate limiting configuration
@@ -42,6 +44,8 @@ pub mod rate_limit {
     pub const LOGIN_MAX_REQUESTS: u32 = 10;
     /// Number of requests allowed per window for registration
     pub const REGISTER_MAX_REQUESTS: u32 = 5;
+    /// Number of requests allowed per window for comment creation
+    pub const COMMENT_CREATE_MAX_REQUESTS: u32 = 30;
 
     /// Duration for view counter flush interval
     pub const VIEW_COUNTER_FLUSH_INTERVAL_SECS: u64 = 60;

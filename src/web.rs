@@ -341,6 +341,87 @@ pub const INDEX_HTML: &str = r##"
             cursor: default;
         }
 
+        /* ===== Comments ===== */
+        .comments-panel {
+            margin-top: 1.5rem;
+        }
+        .comment-form textarea {
+            width: 100%;
+            min-height: 6rem;
+            resize: vertical;
+            font-family: inherit;
+            padding: 0.5rem;
+            border: 1px solid var(--border);
+            background: var(--bg);
+            color: var(--fg);
+        }
+        .comment-form-actions {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 0.75rem;
+            margin-top: 0.75rem;
+            flex-wrap: wrap;
+        }
+        .comment-replying {
+            font-size: 0.875rem;
+            color: var(--muted);
+        }
+        .comment-login-hint {
+            font-size: 0.875rem;
+            color: var(--muted);
+        }
+        .comment-login-hint a {
+            color: var(--link);
+        }
+        .comments-list {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+        .comment {
+            border-left: 1px solid var(--border);
+            padding-left: 1rem;
+        }
+        .comment-children {
+            margin-top: 1rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+        .comment-meta {
+            font-size: 0.8rem;
+            color: var(--muted);
+            margin-bottom: 0.4rem;
+        }
+        .comment-body {
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+        .comment-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            margin-top: 0.6rem;
+        }
+        .comment-btn {
+            font-family: inherit;
+            font-size: 0.8rem;
+            background: var(--card);
+            color: var(--fg);
+            border: 1px solid var(--border);
+            padding: 0.15rem 0.45rem;
+            cursor: pointer;
+        }
+        .comment-btn:hover {
+            background: var(--code-bg);
+        }
+        .comment-btn.liked {
+            border-color: #ffc107;
+            color: #ff8f00;
+        }
+
         /* ===== Toast Notifications ===== */
         #toast-container {
             position: fixed;
@@ -520,6 +601,27 @@ pub const INDEX_HTML: &str = r##"
         </main>
 
         <nav class="pagination" id="pagination"></nav>
+
+        <section class="panel comments-panel" id="comments-panel" hidden>
+            <h3>~ comments</h3>
+            <form class="comment-form" id="comment-form" hidden>
+                <textarea id="comment-input" placeholder="write a comment or reply..."></textarea>
+                <div class="comment-form-actions">
+                    <div class="comment-replying" id="comment-replying" hidden>
+                        replying to <span id="comment-reply-author"></span>
+                        <button type="button" class="btn btn-secondary" id="comment-reply-cancel">cancel reply</button>
+                    </div>
+                    <button type="submit" class="btn">post comment</button>
+                </div>
+                <div id="comment-msg" class="msg"></div>
+            </form>
+            <div class="comment-login-hint" id="comment-login-hint" hidden>
+                login from `+auth` to post comments, reply, and like.
+            </div>
+            <div class="comments-list" id="comments-list">
+                <div class="loading">loading comments...</div>
+            </div>
+        </section>
     </div>
 
     <script>
@@ -538,6 +640,8 @@ pub const INDEX_HTML: &str = r##"
         searchLang: 'all',
         profileUser: null,
         snippetId: null,
+        replyParentId: null,
+        replyAuthor: null,
     };
 
     // Parse URL routing
@@ -553,7 +657,12 @@ pub const INDEX_HTML: &str = r##"
     }
 
     function formatDate(dateStr) {
-        return new Date(dateStr).toISOString().slice(0, 16).replace('T', ' ');
+        const normalized = dateStr.includes('T')
+            ? dateStr
+            : dateStr.includes(' ')
+                ? dateStr.replace(' ', 'T') + 'Z'
+                : dateStr;
+        return new Date(normalized).toISOString().slice(0, 16).replace('T', ' ');
     }
 
     function getAuth() {
@@ -611,6 +720,72 @@ pub const INDEX_HTML: &str = r##"
             opts.headers = { ...(opts.headers || {}), 'X-API-Key': apiKey };
         }
         return fetch(url, opts);
+    }
+
+    function updateCommentComposer() {
+        const panel = document.getElementById('comments-panel');
+        const form = document.getElementById('comment-form');
+        const loginHint = document.getElementById('comment-login-hint');
+        const replying = document.getElementById('comment-replying');
+        const replyAuthor = document.getElementById('comment-reply-author');
+        const { apiKey } = getAuth();
+
+        panel.hidden = !state.snippetId;
+        form.hidden = !apiKey || !state.snippetId;
+        loginHint.hidden = !!apiKey || !state.snippetId;
+        replying.hidden = !state.replyParentId;
+        replyAuthor.textContent = state.replyAuthor || '';
+    }
+
+    function clearReplyTarget() {
+        state.replyParentId = null;
+        state.replyAuthor = null;
+        updateCommentComposer();
+    }
+
+    function startReply(parentId, author) {
+        state.replyParentId = parseInt(parentId, 10);
+        state.replyAuthor = author;
+        updateCommentComposer();
+        document.getElementById('comment-input').focus();
+    }
+
+    function renderCommentTree(comments) {
+        const { apiKey } = getAuth();
+
+        if (!comments.length) {
+            return '<div class="empty">No comments yet.</div>';
+        }
+
+        function renderNodes(nodes) {
+            return nodes.map(comment => {
+                const likeButton = apiKey
+                    ? `<button class="comment-btn${comment.liked ? ' liked' : ''}" data-comment-action="like" data-id="${comment.id}">${comment.liked ? '♥' : '♡'} ${comment.likes || 0}</button>`
+                    : `<span class="star-count">♡ ${comment.likes || 0}</span>`;
+                const replyButton = apiKey
+                    ? `<button class="comment-btn" data-comment-action="reply" data-id="${comment.id}" data-author="${escapeHtml(comment.author)}">reply</button>`
+                    : '';
+                const deleteButton = comment.can_delete
+                    ? `<button class="comment-btn" data-comment-action="delete" data-id="${comment.id}">delete</button>`
+                    : '';
+                const children = comment.children && comment.children.length
+                    ? `<div class="comment-children">${renderNodes(comment.children)}</div>`
+                    : '';
+
+                return `<article class="comment" id="comment-${comment.id}">
+                    <div class="comment-meta">${escapeHtml(comment.author)} · ${formatDate(comment.created_at)}</div>
+                    <div class="comment-body">${escapeHtml(comment.content)}</div>
+                    <div class="comment-actions">${likeButton}${replyButton}${deleteButton}</div>
+                    ${children}
+                </article>`;
+            }).join('');
+        }
+
+        return renderNodes(comments);
+    }
+
+    function renderComments(comments) {
+        document.getElementById('comments-list').innerHTML = renderCommentTree(comments);
     }
 
     // ===== Rendering =====
@@ -684,6 +859,8 @@ pub const INDEX_HTML: &str = r##"
             document.getElementById('auth-box').hidden = true;
             document.getElementById('pagination').innerHTML = '';
             renderSnippets([snippet]);
+            updateCommentComposer();
+            await loadComments();
         } catch (e) {
             container.innerHTML = '<div class="empty">Error loading snippet</div>';
         }
@@ -693,6 +870,8 @@ pub const INDEX_HTML: &str = r##"
         state.page = page;
         const container = document.getElementById('snippets');
         const { apiKey } = getAuth();
+        clearReplyTarget();
+        document.getElementById('comments-panel').hidden = true;
         let url;
         if (state.searchQuery || (state.searchLang && state.searchLang !== 'all')) {
             const params = new URLSearchParams({ page, limit: PER_PAGE });
@@ -718,6 +897,101 @@ pub const INDEX_HTML: &str = r##"
     function refreshSnippets() {
         if (state.snippetId) loadSingleSnippet();
         else loadSnippets(state.page);
+    }
+
+    async function loadComments() {
+        if (!state.snippetId) return;
+        const { apiKey } = getAuth();
+        const container = document.getElementById('comments-list');
+        updateCommentComposer();
+        container.innerHTML = '<div class="loading">loading comments...</div>';
+        try {
+            const resp = await apiFetch(`/api/snippets/${state.snippetId}/comments`, { apiKey });
+            if (!resp.ok) {
+                container.innerHTML = '<div class="empty">Error loading comments</div>';
+                return;
+            }
+            const data = await resp.json();
+            renderComments(data.comments || []);
+        } catch (e) {
+            container.innerHTML = '<div class="empty">Error loading comments</div>';
+        }
+    }
+
+    async function submitComment(e) {
+        e.preventDefault();
+        const { apiKey } = getAuth();
+        const content = document.getElementById('comment-input').value.trim();
+        const msgDiv = document.getElementById('comment-msg');
+        if (!apiKey) {
+            msgDiv.innerHTML = '<div class="msg-error">login required</div>';
+            return;
+        }
+        if (!content) {
+            msgDiv.innerHTML = '<div class="msg-error">comment cannot be empty</div>';
+            return;
+        }
+        try {
+            const resp = await apiFetch(`/api/snippets/${state.snippetId}/comments`, {
+                method: 'POST',
+                apiKey,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ content, parent_id: state.replyParentId }),
+            });
+            if (resp.ok) {
+                document.getElementById('comment-input').value = '';
+                msgDiv.innerHTML = '';
+                clearReplyTarget();
+                await loadComments();
+            } else {
+                const error = await resp.text();
+                msgDiv.innerHTML = `<div class="msg-error">${escapeHtml(error)}</div>`;
+            }
+        } catch (e) {
+            msgDiv.innerHTML = '<div class="msg-error">failed to post comment</div>';
+        }
+    }
+
+    async function toggleCommentLike(commentId) {
+        const { apiKey } = getAuth();
+        if (!apiKey) { toast('Please login to like comments', 'error'); return; }
+        const button = document.querySelector(`[data-comment-action="like"][data-id="${commentId}"]`);
+        const isLiked = button?.classList.contains('liked');
+        try {
+            const resp = await apiFetch(`/api/comments/${commentId}/like`, {
+                method: isLiked ? 'DELETE' : 'POST',
+                apiKey,
+            });
+            if (resp.ok) {
+                await loadComments();
+            } else {
+                toast('Failed to update comment like', 'error');
+            }
+        } catch (e) {
+            toast('Error liking comment', 'error');
+        }
+    }
+
+    async function deleteComment(commentId) {
+        const { apiKey } = getAuth();
+        if (!apiKey) { toast('Please login to delete comments', 'error'); return; }
+        if (!(await showConfirm('Delete this comment and its replies?'))) return;
+        try {
+            const resp = await apiFetch(`/api/comments/${commentId}`, {
+                method: 'DELETE',
+                apiKey,
+            });
+            if (resp.ok) {
+                await loadComments();
+                toast('Comment deleted', 'success');
+            } else if (resp.status === 403) {
+                toast('Not allowed to delete this comment', 'error');
+            } else {
+                toast('Failed to delete comment', 'error');
+            }
+        } catch (e) {
+            toast('Error deleting comment', 'error');
+        }
     }
 
     // ===== Snippet Actions =====
@@ -1066,6 +1340,8 @@ pub const INDEX_HTML: &str = r##"
         document.getElementById('logout-btn').addEventListener('click', doLogout);
         document.getElementById('cancel-change-pass').addEventListener('click', hideChangePassword);
         document.getElementById('change-password-form').addEventListener('submit', doChangePassword);
+        document.getElementById('comment-form').addEventListener('submit', submitComment);
+        document.getElementById('comment-reply-cancel').addEventListener('click', clearReplyTarget);
 
         // Confirm modal
         document.getElementById('confirm-yes').addEventListener('click', () => resolveConfirm(true));
@@ -1096,6 +1372,15 @@ pub const INDEX_HTML: &str = r##"
             loadSnippets(parseInt(btn.dataset.page));
         });
 
+        document.getElementById('comments-panel').addEventListener('click', e => {
+            const btn = e.target.closest('[data-comment-action]');
+            if (!btn) return;
+            const { commentAction, id, author } = btn.dataset;
+            if (commentAction === 'reply') startReply(id, author);
+            if (commentAction === 'like') toggleCommentLike(id);
+            if (commentAction === 'delete') deleteComment(id);
+        });
+
         // System theme change
         window.matchMedia?.('(prefers-color-scheme: dark)').addEventListener('change', e => {
             if (!localStorage.getItem('snip_theme')) applyTheme(e.matches);
@@ -1120,6 +1405,8 @@ pub const INDEX_HTML: &str = r##"
         if (state.profileUser) {
             document.getElementById('header-suffix').textContent = ` ~ ${state.profileUser}`;
         }
+
+        updateCommentComposer();
 
         // Load appropriate view
         if (state.snippetId) loadSingleSnippet();

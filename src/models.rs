@@ -1,4 +1,3 @@
-use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use snip::config;
 
@@ -10,7 +9,7 @@ pub struct User {
     #[serde(skip_serializing)]
     pub password_hash: String,
     pub api_key: String,
-    pub created_at: DateTime<Utc>,
+    pub created_at: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -64,7 +63,7 @@ pub struct Snippet {
     pub user_id: i64,
     pub content: String,
     pub description: Option<String>,
-    pub created_at: DateTime<Utc>,
+    pub created_at: String,
     pub views: i64,
 }
 
@@ -74,7 +73,7 @@ pub struct SnippetWithAuthor {
     pub content: String,
     pub description: Option<String>,
     pub language: Option<String>,
-    pub created_at: DateTime<Utc>,
+    pub created_at: String,
     pub author: String,
     pub views: i64,
     pub stars: i64,
@@ -88,7 +87,7 @@ pub struct SnippetResponse {
     pub content: String,
     pub description: Option<String>,
     pub language: Option<String>,
-    pub created_at: DateTime<Utc>,
+    pub created_at: String,
     pub author: String,
     pub views: i64,
     pub stars: i64,
@@ -126,7 +125,7 @@ pub struct CreateSnippetResponse {
     pub content: String,
     pub description: Option<String>,
     pub language: Option<String>,
-    pub created_at: DateTime<Utc>,
+    pub created_at: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -182,4 +181,43 @@ pub struct ForkResponse {
     pub snippet_id: i64,
     pub forked_id: i64,
     pub total_forks: i64,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateCommentRequest {
+    pub content: String,
+    pub parent_id: Option<i64>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CreateCommentResponse {
+    pub id: i64,
+    pub snippet_id: i64,
+    pub parent_id: Option<i64>,
+    pub created_at: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CommentResponse {
+    pub id: i64,
+    pub parent_id: Option<i64>,
+    pub content: String,
+    pub created_at: String,
+    pub author: String,
+    pub likes: i64,
+    pub liked: bool,
+    pub can_delete: bool,
+    pub children: Vec<CommentResponse>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ListCommentsResponse {
+    pub comments: Vec<CommentResponse>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CommentLikeResponse {
+    pub comment_id: i64,
+    pub liked: bool,
+    pub total_likes: i64,
 }

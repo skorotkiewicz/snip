@@ -116,10 +116,10 @@ async fn main() -> anyhow::Result<()> {
         });
     }
 
-    // Configure global rate limiting: 10 requests per second per IP with burst of 20
+    // Configure global rate limiting: 10 requests per second per IP with burst of 40
     let governor_conf = GovernorConfigBuilder::default()
         .per_second(10) // 10 requests
-        .burst_size(20) // 20 burst
+        .burst_size(40) // 40 burst
         .finish()
         .unwrap();
 
@@ -140,8 +140,17 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/snippets/{id}/star", delete(unstar_snippet))
         .route("/api/snippets/{id}/star", get(get_star_status))
         .route("/api/snippets/{id}/fork", post(fork_snippet))
+        .route(
+            "/api/snippets/{id}/comments",
+            get(list_comments).post(create_comment),
+        )
         .route("/api/search", get(search_snippets))
         .route("/api/users/{username}/snippets", get(list_user_snippets))
+        .route("/api/comments/{id}", delete(delete_comment))
+        .route(
+            "/api/comments/{id}/like",
+            post(like_comment).delete(unlike_comment),
+        )
         .layer(CompressionLayer::new())
         .layer(GovernorLayer::new(governor_conf))
         .layer(CorsLayer::permissive())

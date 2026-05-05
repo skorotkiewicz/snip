@@ -219,6 +219,20 @@ GET /api/search?q=hello&lang=rust&limit=10
 
 # List user's snippets
 GET /api/users/alice/snippets
+
+# List nested comments for a snippet
+GET /api/snippets/123/comments
+
+# Create a comment or reply (requires API key)
+POST /api/snippets/123/comments -H "X-API-Key: xxx"
+{"content": "nice snippet", "parent_id": null}
+
+# Like / unlike a comment (requires API key)
+POST /api/comments/456/like -H "X-API-Key: xxx"
+DELETE /api/comments/456/like -H "X-API-Key: xxx"
+
+# Delete your own comment or moderate comments on your snippet
+DELETE /api/comments/456 -H "X-API-Key: xxx"
 ```
 
 ### Pages

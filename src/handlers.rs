@@ -7,7 +7,7 @@ use axum::{
 };
 use bcrypt::{hash, verify};
 use sqlx::{QueryBuilder, Sqlite};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 
 use crate::{AppState, models::*};
@@ -118,13 +118,25 @@ impl FromRequestParts<AppState> for OptionalAuthUser {
 
 const SNIPPET_BASE_SQL: &str = r#"
     SELECT
-        s.id, s.content, s.description, s.language, s.created_at, s.views,
+        s.id, s.content, s.description, s.language, CAST(s.created_at AS TEXT) AS created_at, s.views,
         u.username as author,
         (SELECT COUNT(*) FROM stars WHERE snippet_id = s.id) as stars,
         s.forks, s.forked_from
     FROM snippets s
     JOIN users u ON s.user_id = u.id
 "#;
+
+#[derive(Debug, sqlx::FromRow)]
+struct CommentRow {
+    id: i64,
+    parent_id: Option<i64>,
+    content: String,
+    created_at: String,
+    author: String,
+    author_id: i64,
+    snippet_owner_id: i64,
+    likes: i64,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct Pagination {
@@ -257,9 +269,112 @@ fn build_snippet_responses(
         .collect()
 }
 
+async fn get_liked_comment_ids(
+    pool: &sqlx::SqlitePool,
+    user_id: Option<i64>,
+    comment_ids: &[i64],
+) -> Result<HashSet<i64>, AppError> {
+    let Some(user_id) = user_id else {
+        return Ok(HashSet::new());
+    };
+    if comment_ids.is_empty() {
+        return Ok(HashSet::new());
+    }
+
+    let mut query =
+        QueryBuilder::<Sqlite>::new("SELECT comment_id FROM comment_likes WHERE user_id = ");
+    query.push_bind(user_id);
+    query.push(" AND comment_id IN (");
+
+    let mut separated = query.separated(", ");
+    for comment_id in comment_ids {
+        separated.push_bind(comment_id);
+    }
+    separated.push_unseparated(")");
+
+    let rows: Vec<(i64,)> = query.build_query_as().fetch_all(pool).await?;
+    Ok(rows.into_iter().map(|(comment_id,)| comment_id).collect())
+}
+
+fn can_delete_comment(
+    current_user_id: Option<i64>,
+    comment_author_id: i64,
+    snippet_owner_id: i64,
+) -> bool {
+    matches!(
+        current_user_id,
+        Some(user_id) if user_id == comment_author_id || user_id == snippet_owner_id
+    )
+}
+
+fn build_comment_responses(
+    rows: Vec<CommentRow>,
+    liked_comment_ids: &HashSet<i64>,
+    current_user_id: Option<i64>,
+) -> Vec<CommentResponse> {
+    let mut by_parent: HashMap<Option<i64>, Vec<CommentResponse>> = HashMap::new();
+
+    for row in rows {
+        by_parent
+            .entry(row.parent_id)
+            .or_default()
+            .push(CommentResponse {
+                id: row.id,
+                parent_id: row.parent_id,
+                content: row.content,
+                created_at: row.created_at,
+                author: row.author,
+                likes: row.likes,
+                liked: liked_comment_ids.contains(&row.id),
+                can_delete: can_delete_comment(
+                    current_user_id,
+                    row.author_id,
+                    row.snippet_owner_id,
+                ),
+                children: Vec::new(),
+            });
+    }
+
+    fn nest_comments(
+        parent_id: Option<i64>,
+        by_parent: &mut HashMap<Option<i64>, Vec<CommentResponse>>,
+    ) -> Vec<CommentResponse> {
+        by_parent
+            .remove(&parent_id)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|mut comment| {
+                comment.children = nest_comments(Some(comment.id), by_parent);
+                comment
+            })
+            .collect()
+    }
+
+    nest_comments(None, &mut by_parent)
+}
+
 async fn snippet_exists(pool: &sqlx::SqlitePool, snippet_id: i64) -> Result<bool, AppError> {
-    sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM snippets WHERE id = ?1)")
+    let exists: i64 = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM snippets WHERE id = ?)")
         .bind(snippet_id)
+        .fetch_one(pool)
+        .await?;
+    Ok(exists != 0)
+}
+
+async fn comment_exists(pool: &sqlx::SqlitePool, comment_id: i64) -> Result<bool, AppError> {
+    let exists: i64 = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM comments WHERE id = ?)")
+        .bind(comment_id)
+        .fetch_one(pool)
+        .await?;
+    Ok(exists != 0)
+}
+
+async fn get_total_comment_likes(
+    pool: &sqlx::SqlitePool,
+    comment_id: i64,
+) -> Result<i64, AppError> {
+    sqlx::query_scalar("SELECT COUNT(*) FROM comment_likes WHERE comment_id = ?")
+        .bind(comment_id)
         .fetch_one(pool)
         .await
         .map_err(Into::into)
@@ -388,7 +503,7 @@ pub async fn create_snippet(
         content: req.content,
         description: req.description,
         language: Some(validated_lang),
-        created_at,
+        created_at: created_at.to_string(),
     }))
 }
 
@@ -820,10 +935,210 @@ pub async fn fork_snippet(
     }))
 }
 
+pub async fn list_comments(
+    State(state): State<AppState>,
+    opt_user: OptionalAuthUser,
+    Path(snippet_id): Path<i64>,
+) -> Result<Json<ListCommentsResponse>, AppError> {
+    let pool = state.db.pool();
+    let current_user_id = opt_user.0.as_ref().map(|user| user.id);
+
+    if !snippet_exists(pool, snippet_id).await? {
+        return Err(AppError::not_found("Snippet not found"));
+    }
+
+    let rows: Vec<CommentRow> = sqlx::query_as(
+        r#"
+        SELECT
+            c.id,
+            c.parent_id,
+            c.content,
+            CAST(c.created_at AS TEXT) AS created_at,
+            u.username AS author,
+            c.user_id AS author_id,
+            s.user_id AS snippet_owner_id,
+            (SELECT COUNT(*) FROM comment_likes cl WHERE cl.comment_id = c.id) AS likes
+        FROM comments c
+        JOIN users u ON c.user_id = u.id
+        JOIN snippets s ON c.snippet_id = s.id
+        WHERE c.snippet_id = ?
+        ORDER BY c.created_at ASC, c.id ASC
+        "#,
+    )
+    .bind(snippet_id)
+    .fetch_all(pool)
+    .await?;
+
+    let comment_ids = rows.iter().map(|row| row.id).collect::<Vec<_>>();
+    let liked_comment_ids = get_liked_comment_ids(pool, current_user_id, &comment_ids).await?;
+
+    Ok(Json(ListCommentsResponse {
+        comments: build_comment_responses(rows, &liked_comment_ids, current_user_id),
+    }))
+}
+
+pub async fn create_comment(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(snippet_id): Path<i64>,
+    Json(req): Json<CreateCommentRequest>,
+) -> Result<Json<CreateCommentResponse>, AppError> {
+    let pool = state.db.pool();
+    let content = req.content.trim();
+
+    if !state
+        .redis
+        .check_rate_limit(
+            "comment_create",
+            &user.id.to_string(),
+            config::rate_limit::COMMENT_CREATE_MAX_REQUESTS,
+            config::rate_limit::DEFAULT_WINDOW_SECS,
+        )
+        .await
+    {
+        return Err(AppError::new(
+            StatusCode::TOO_MANY_REQUESTS,
+            "Rate limit exceeded: 30 comments per minute",
+        ));
+    }
+
+    if content.is_empty() {
+        return Err(AppError::bad_request("Comment cannot be empty"));
+    }
+    if content.len() > config::limits::MAX_COMMENT_LENGTH {
+        return Err(AppError::bad_request(
+            "Comment exceeds maximum length of 1000 characters",
+        ));
+    }
+    if !snippet_exists(pool, snippet_id).await? {
+        return Err(AppError::not_found("Snippet not found"));
+    }
+
+    if let Some(parent_id) = req.parent_id {
+        let parent_snippet_id: Option<i64> =
+            sqlx::query_scalar("SELECT snippet_id FROM comments WHERE id = ?")
+                .bind(parent_id)
+                .fetch_optional(pool)
+                .await?;
+
+        match parent_snippet_id {
+            Some(id) if id == snippet_id => {}
+            Some(_) => {
+                return Err(AppError::bad_request(
+                    "Parent comment belongs to a different snippet",
+                ));
+            }
+            None => return Err(AppError::not_found("Parent comment not found")),
+        }
+    }
+
+    let (id, created_at): (i64, String) = sqlx::query_as(
+        "INSERT INTO comments (snippet_id, user_id, parent_id, content) VALUES (?, ?, ?, ?) RETURNING id, CAST(created_at AS TEXT)",
+    )
+        .bind(snippet_id)
+        .bind(user.id)
+        .bind(req.parent_id)
+        .bind(content)
+        .fetch_one(pool)
+        .await?;
+
+    Ok(Json(CreateCommentResponse {
+        id,
+        snippet_id,
+        parent_id: req.parent_id,
+        created_at,
+    }))
+}
+
+pub async fn delete_comment(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(comment_id): Path<i64>,
+) -> Result<StatusCode, AppError> {
+    let pool = state.db.pool();
+
+    let owner_info: Option<(i64, i64)> = sqlx::query_as(
+        r#"
+        SELECT c.user_id, s.user_id
+        FROM comments c
+        JOIN snippets s ON c.snippet_id = s.id
+        WHERE c.id = ?
+        "#,
+    )
+    .bind(comment_id)
+    .fetch_optional(pool)
+    .await?;
+
+    let Some((comment_author_id, snippet_owner_id)) = owner_info else {
+        return Err(AppError::not_found("Comment not found"));
+    };
+
+    if !can_delete_comment(Some(user.id), comment_author_id, snippet_owner_id) {
+        return Err(AppError::new(
+            StatusCode::FORBIDDEN,
+            "Can only delete your own comments or comments on your snippets",
+        ));
+    }
+
+    sqlx::query("DELETE FROM comments WHERE id = ?")
+        .bind(comment_id)
+        .execute(pool)
+        .await?;
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+pub async fn like_comment(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(comment_id): Path<i64>,
+) -> Result<Json<CommentLikeResponse>, AppError> {
+    let pool = state.db.pool();
+
+    if !comment_exists(pool, comment_id).await? {
+        return Err(AppError::not_found("Comment not found"));
+    }
+
+    sqlx::query(
+        "INSERT INTO comment_likes (user_id, comment_id) VALUES (?, ?) ON CONFLICT DO NOTHING",
+    )
+    .bind(user.id)
+    .bind(comment_id)
+    .execute(pool)
+    .await?;
+
+    let total_likes = get_total_comment_likes(pool, comment_id).await?;
+    Ok(Json(CommentLikeResponse {
+        comment_id,
+        liked: true,
+        total_likes,
+    }))
+}
+
+pub async fn unlike_comment(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(comment_id): Path<i64>,
+) -> Result<Json<CommentLikeResponse>, AppError> {
+    let pool = state.db.pool();
+
+    sqlx::query("DELETE FROM comment_likes WHERE user_id = ? AND comment_id = ?")
+        .bind(user.id)
+        .bind(comment_id)
+        .execute(pool)
+        .await?;
+
+    let total_likes = get_total_comment_likes(pool, comment_id).await?;
+    Ok(Json(CommentLikeResponse {
+        comment_id,
+        liked: false,
+        total_likes,
+    }))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::Utc;
     use std::collections::HashSet;
 
     #[test]
@@ -883,14 +1198,14 @@ mod tests {
 
     #[test]
     fn build_snippet_responses_marks_matching_snippets_as_starred() {
-        let created_at = Utc::now();
+        let created_at = "2026-05-04T00:00:00Z".to_string();
         let rows = vec![
             SnippetWithAuthor {
                 id: 10,
                 content: "fn main() {}".to_string(),
                 description: Some("first".to_string()),
                 language: Some("rust".to_string()),
-                created_at,
+                created_at: created_at.clone(),
                 author: "alice".to_string(),
                 views: 1,
                 stars: 3,
@@ -927,7 +1242,7 @@ mod tests {
             content: "echo hi".to_string(),
             description: None,
             language: Some("bash".to_string()),
-            created_at: Utc::now(),
+            created_at: "2026-05-04T00:00:00Z".to_string(),
             author: "carol".to_string(),
             views: 0,
             stars: 0,
@@ -940,5 +1255,62 @@ mod tests {
         assert_eq!(responses.len(), 1);
         assert!(!responses[0].starred);
         assert_eq!(responses[0].author, "carol");
+    }
+
+    #[test]
+    fn can_delete_comment_allows_author_or_snippet_owner() {
+        assert!(can_delete_comment(Some(7), 7, 9));
+        assert!(can_delete_comment(Some(9), 7, 9));
+        assert!(!can_delete_comment(Some(3), 7, 9));
+        assert!(!can_delete_comment(None, 7, 9));
+    }
+
+    #[test]
+    fn build_comment_responses_nests_children_and_marks_likes() {
+        let created_at = "2026-05-04T00:00:00Z".to_string();
+        let rows = vec![
+            CommentRow {
+                id: 1,
+                parent_id: None,
+                content: "root".to_string(),
+                created_at: created_at.clone(),
+                author: "alice".to_string(),
+                author_id: 10,
+                snippet_owner_id: 99,
+                likes: 2,
+            },
+            CommentRow {
+                id: 2,
+                parent_id: Some(1),
+                content: "child".to_string(),
+                created_at: created_at.clone(),
+                author: "bob".to_string(),
+                author_id: 20,
+                snippet_owner_id: 99,
+                likes: 1,
+            },
+            CommentRow {
+                id: 3,
+                parent_id: Some(2),
+                content: "grandchild".to_string(),
+                created_at,
+                author: "carol".to_string(),
+                author_id: 30,
+                snippet_owner_id: 99,
+                likes: 0,
+            },
+        ];
+
+        let liked_ids = HashSet::from([2]);
+        let comments = build_comment_responses(rows, &liked_ids, Some(99));
+
+        assert_eq!(comments.len(), 1);
+        assert_eq!(comments[0].id, 1);
+        assert_eq!(comments[0].children.len(), 1);
+        assert_eq!(comments[0].children[0].id, 2);
+        assert!(comments[0].children[0].liked);
+        assert!(comments[0].children[0].can_delete);
+        assert_eq!(comments[0].children[0].children.len(), 1);
+        assert_eq!(comments[0].children[0].children[0].id, 3);
     }
 }
