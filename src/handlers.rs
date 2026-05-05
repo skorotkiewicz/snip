@@ -121,7 +121,8 @@ const SNIPPET_BASE_SQL: &str = r#"
         s.id, s.content, s.description, s.language, CAST(s.created_at AS TEXT) AS created_at, s.views,
         u.username as author,
         (SELECT COUNT(*) FROM stars WHERE snippet_id = s.id) as stars,
-        s.forks, s.forked_from
+        s.forks, s.forked_from,
+        (SELECT COUNT(*) FROM comments WHERE snippet_id = s.id) as comments
     FROM snippets s
     JOIN users u ON s.user_id = u.id
 "#;
@@ -265,6 +266,7 @@ fn build_snippet_responses(
             stars: row.stars,
             forks: row.forks,
             forked_from: row.forked_from,
+            comments: row.comments,
         })
         .collect()
 }
@@ -1211,6 +1213,7 @@ mod tests {
                 stars: 3,
                 forks: 0,
                 forked_from: None,
+                comments: 5,
             },
             SnippetWithAuthor {
                 id: 11,
@@ -1223,6 +1226,7 @@ mod tests {
                 stars: 4,
                 forks: 1,
                 forked_from: Some(9),
+                comments: 3,
             },
         ];
         let starred_ids = HashSet::from([11]);
@@ -1248,6 +1252,7 @@ mod tests {
             stars: 0,
             forks: 0,
             forked_from: None,
+            comments: 0,
         }];
 
         let responses = build_snippet_responses(rows, &HashSet::new());

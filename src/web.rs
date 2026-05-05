@@ -284,6 +284,16 @@ pub const INDEX_HTML: &str = r##"
             color: var(--muted);
             margin-left: 0.5rem;
         }
+        .comment-count {
+            font-size: 0.875rem;
+            color: var(--muted);
+            margin-left: 0.5rem;
+            text-decoration: none;
+        }
+        .comment-count:hover {
+            color: var(--fg);
+            text-decoration: underline;
+        }
         .forked-from {
             font-size: 0.875rem;
             color: var(--muted);
@@ -816,6 +826,10 @@ pub const INDEX_HTML: &str = r##"
             const forkBtn = apiKey
                 ? ` <button class="fork-btn" data-action="fork" data-id="${s.id}" title="Fork">🍴 ${forkCount}</button>`
                 : (forkCount > 0 ? ` <span class="fork-count">🍴 ${forkCount}</span>` : '');
+            const commentCount = s.comments || 0;
+            const commentBtn = commentCount > 0
+                ? ` <a href="/s/${s.id}" class="comment-count" title="View comments">// ${commentCount}</a>`
+                : '';
             const forkedFrom = s.forked_from
                 ? ` · <span class="forked-from">forked from <a href="/s/${s.forked_from}">/s/${s.forked_from}</a></span>`
                 : '';
@@ -824,7 +838,7 @@ pub const INDEX_HTML: &str = r##"
             return `<div class="snippet" id="snippet-${s.id}">
                     ${desc}
                     <div class="snippet-content"><pre><code${langClass}>${escapeHtml(s.content)}</code></pre></div>
-                    <div class="snippet-meta">${author} · <a href="/s/${s.id}">${formatDate(s.created_at)}</a> · ${views} views${starBtn}${forkBtn}${forkedFrom} · <a href="/raw/${s.id}" class="raw-link">raw</a>${deleteBtn}</div>
+                    <div class="snippet-meta">${author} · <a href="/s/${s.id}">${formatDate(s.created_at)}</a> · ${views} views${starBtn}${forkBtn}${commentBtn}${forkedFrom} · <a href="/raw/${s.id}" class="raw-link">raw</a>${deleteBtn}</div>
                 </div>`;
         }).join('');
 

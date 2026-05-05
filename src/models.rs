@@ -79,6 +79,7 @@ pub struct SnippetWithAuthor {
     pub stars: i64,
     pub forks: i64,
     pub forked_from: Option<i64>,
+    pub comments: i64,
 }
 
 #[derive(Debug, Serialize)]
@@ -94,6 +95,7 @@ pub struct SnippetResponse {
     pub starred: bool,
     pub forks: i64,
     pub forked_from: Option<i64>,
+    pub comments: i64,
 }
 
 #[derive(Debug, Deserialize)]
