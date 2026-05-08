@@ -1,6 +1,6 @@
 [package]
 name = "snip"
-version = "0.2.7"
+version = "0.2.8"
 edition = "2024"
 
 [lib]
@@ -35,3 +35,8 @@ tracing = "0.1"
 tracing-subscriber = "0.3"
 redis = { version = "0.27", features = ["tokio-comp"] }
 tower_governor = { version = "0.8", features = ["axum"] }
+
+[profile.release]
+lto = true
+strip = true
+codegen-units = 1

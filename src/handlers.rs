@@ -119,13 +119,28 @@ impl FromRequestParts<AppState> for OptionalAuthUser {
 const SNIPPET_BASE_SQL: &str = r#"
     SELECT
         s.id, s.content, s.description, s.language, CAST(s.created_at AS TEXT) AS created_at, s.views,
-        u.username as author,
-        (SELECT COUNT(*) FROM stars WHERE snippet_id = s.id) as stars,
+        u.username AS author,
+        COALESCE(st.star_count, 0) AS stars,
         s.forks, s.forked_from,
-        (SELECT COUNT(*) FROM comments WHERE snippet_id = s.id) as comments
+        COALESCE(cm.comment_count, 0) AS comments
     FROM snippets s
     JOIN users u ON s.user_id = u.id
+    LEFT JOIN (SELECT snippet_id, COUNT(*) AS star_count FROM stars GROUP BY snippet_id) st
+        ON st.snippet_id = s.id
+    LEFT JOIN (SELECT snippet_id, COUNT(*) AS comment_count FROM comments GROUP BY snippet_id) cm
+        ON cm.snippet_id = s.id
 "#;
+
+// const SNIPPET_BASE_SQL: &str = r#"
+//     SELECT
+//         s.id, s.content, s.description, s.language, CAST(s.created_at AS TEXT) AS created_at, s.views,
+//         u.username as author,
+//         (SELECT COUNT(*) FROM stars WHERE snippet_id = s.id) as stars,
+//         s.forks, s.forked_from,
+//         (SELECT COUNT(*) FROM comments WHERE snippet_id = s.id) as comments
+//     FROM snippets s
+//     JOIN users u ON s.user_id = u.id
+// "#;
 
 #[derive(Debug, sqlx::FromRow)]
 struct CommentRow {
@@ -920,15 +935,21 @@ pub async fn fork_snippet(
     .fetch_one(pool)
     .await?;
 
-    sqlx::query("UPDATE snippets SET forks = forks + 1 WHERE id = ?1")
-        .bind(id)
-        .execute(pool)
-        .await?;
+    // sqlx::query("UPDATE snippets SET forks = forks + 1 WHERE id = ?1")
+    //     .bind(id)
+    //     .execute(pool)
+    //     .await?;
 
-    let total_forks: i64 = sqlx::query_scalar("SELECT forks FROM snippets WHERE id = ?1")
-        .bind(id)
-        .fetch_one(pool)
-        .await?;
+    // let total_forks: i64 = sqlx::query_scalar("SELECT forks FROM snippets WHERE id = ?1")
+    //     .bind(id)
+    //     .fetch_one(pool)
+    //     .await?;
+
+    let (total_forks,): (i64,) =
+        sqlx::query_as("UPDATE snippets SET forks = forks + 1 WHERE id = ?1 RETURNING forks")
+            .bind(id)
+            .fetch_one(pool)
+            .await?;
 
     Ok(Json(ForkResponse {
         snippet_id: id,

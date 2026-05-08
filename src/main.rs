@@ -6,15 +6,16 @@ use axum::{
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use std::net::SocketAddr;
 use std::str::FromStr;
-use std::time::Duration;
 use tower_governor::{GovernorLayer, governor::GovernorConfigBuilder};
 use tower_http::{compression::CompressionLayer, cors::CorsLayer};
 use tracing_subscriber::fmt;
 
 use snip::config;
 
+mod background;
 mod db;
 mod handlers;
+mod middleware;
 mod models;
 mod redis_cache;
 mod web;
@@ -24,7 +25,7 @@ use handlers::*;
 use redis_cache::RedisCache;
 
 #[derive(Clone)]
-struct AppState {
+pub struct AppState {
     db: Database,
     redis: RedisCache,
 }
@@ -55,7 +56,6 @@ async fn main() -> anyhow::Result<()> {
     {
         std::fs::create_dir_all(parent)?;
     }
-    // Create the file if it doesn't exist (SQLite needs this in some environments)
     if !filename.exists() {
         std::fs::File::create(filename)?;
     }
@@ -81,76 +81,59 @@ async fn main() -> anyhow::Result<()> {
 
     let state = AppState {
         db: Database::new(pool),
-        redis: redis.clone(),
+        redis,
     };
 
     // Start background task to periodically flush view counters
-    if redis.is_enabled() {
-        let db_for_flush = state.db.clone();
-        tokio::spawn(async move {
-            let mut interval = tokio::time::interval(Duration::from_secs(
-                config::rate_limit::VIEW_COUNTER_FLUSH_INTERVAL_SECS,
-            ));
-            loop {
-                interval.tick().await;
-                let counters = redis.flush_view_counters("views").await;
-                if !counters.is_empty() {
-                    tracing::info!("Flushing {} view counters to database", counters.len());
-                    for (snippet_id, count) in counters {
-                        if let Err(e) =
-                            sqlx::query("UPDATE snippets SET views = views + ?1 WHERE id = ?2")
-                                .bind(count)
-                                .bind(snippet_id)
-                                .execute(db_for_flush.pool())
-                                .await
-                        {
-                            tracing::error!(
-                                "Failed to update views for snippet {}: {}",
-                                snippet_id,
-                                e
-                            );
-                        }
-                    }
-                }
-            }
-        });
-    }
+    background::spawn_view_counter_flush(state.db.clone(), state.redis.clone());
 
-    // Configure global rate limiting: 10 requests per second per IP with burst of 40
+    // Configure global rate limiting: 10 requests per second per IP with burst of 60
     let governor_conf = GovernorConfigBuilder::default()
-        .per_second(10) // 10 requests
-        .burst_size(40) // 40 burst
+        .per_second(10)
+        .burst_size(60)
         .finish()
         .unwrap();
 
-    let app = Router::new()
+    // Create separate routers for view and API routes
+    let app_view = Router::new()
         .route("/", get(serve_index))
         .route("/u/{username}", get(serve_index))
-        .route("/s/{id}", get(serve_index))
-        .route("/raw/{id}", get(get_raw_snippet))
+        .route("/s/{id}", get(serve_index));
+
+    let app_api = Router::new()
         .route("/api/register", post(register_user))
         .route("/api/login", post(login))
         .route("/api/revoke-key", post(revoke_api_key))
         .route("/api/change-password", post(change_password))
         .route("/api/snippets", post(create_snippet))
-        .route("/api/snippets", get(list_snippets))
-        .route("/api/snippets/{id}", get(get_snippet))
         .route("/api/snippets/{id}", delete(delete_snippet))
         .route("/api/snippets/{id}/star", post(star_snippet))
-        .route("/api/snippets/{id}/star", delete(unstar_snippet))
-        .route("/api/snippets/{id}/star", get(get_star_status))
         .route("/api/snippets/{id}/fork", post(fork_snippet))
-        .route(
-            "/api/snippets/{id}/comments",
-            get(list_comments).post(create_comment),
-        )
-        .route("/api/search", get(search_snippets))
-        .route("/api/users/{username}/snippets", get(list_user_snippets))
+        .route("/api/snippets/{id}/star", delete(unstar_snippet))
+        .route("/api/snippets/{id}/comments", post(create_comment))
         .route("/api/comments/{id}", delete(delete_comment))
         .route(
             "/api/comments/{id}/like",
             post(like_comment).delete(unlike_comment),
         )
+        .route("/api/snippets/{id}/comments", get(list_comments))
+        .route("/api/snippets/{id}", get(get_snippet))
+        .route("/api/snippets/{id}/star", get(get_star_status));
+
+    let app_api_cache = Router::new()
+        .route("/raw/{id}", get(get_raw_snippet))
+        .route("/api/snippets", get(list_snippets))
+        .route("/api/search", get(search_snippets))
+        .route("/api/users/{username}/snippets", get(list_user_snippets))
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            middleware::cache_middleware,
+        ));
+
+    // Merge routers and add shared middleware
+    let app = app_view
+        .merge(app_api)
+        .merge(app_api_cache)
         .layer(CompressionLayer::new())
         .layer(GovernorLayer::new(governor_conf))
         .layer(CorsLayer::permissive())
@@ -170,7 +153,3 @@ async fn main() -> anyhow::Result<()> {
 async fn serve_index() -> Html<String> {
     Html(web::INDEX_HTML.to_string())
 }
-
-// async fn serve_index() -> Html<&'static str> {
-//     Html(include_str!("index.html"))
-// }
