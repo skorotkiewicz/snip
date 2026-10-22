@@ -7,7 +7,7 @@ A minimal, self-hosted snippet sharing service. Share code snippets via web UI, 
 ## Features
 
 - **Web UI** - Syntax highlighting and expandable previews for long snippets
-- **CLI Tool** - Pipe snippets directly from terminal
+- **CLI Tool** - Share files or piped text, with language detection and concise terminal feedback
 - **API** - RESTful API for integration
 - **Self-hosted** - Single binary + SQLite, no external dependencies
 - **Multi-platform** - Linux (x86_64, aarch64), macOS, Windows
@@ -66,14 +66,15 @@ Credentials are saved to `~/.config/snip/config.json`, with owner-only file perm
 # Pipe any content directly
 echo 'console.log("hello")' | snip --desc "example" --lang javascript
 
-# Or from a file
-cat main.rs | snip --desc "main function" --lang rust
+# Or share a file; language and title come from its name
+snip main.rs
 
 # View the snippet
 snip get 42
 
-# Get a sharable link
-echo "Check this: http://localhost:3000/s/42"
+# Posting prints the share URL, so it also works in scripts
+url=$(snip main.rs)
+echo "Check this: $url"
 ```
 
 ## CLI Usage
@@ -91,17 +92,30 @@ snip logout                # Clear saved credentials
 
 ### Post Snippets
 
-```bash
-# Basic usage (reads from stdin)
-echo "code here" | snip
+Run `snip` or `snip -h` for a short list of useful commands. Help shows the current account and omits login and register when an API key is ready. Use `snip --help` for advanced commands and connection options. Hidden commands remain callable, so `snip login another-user` still switches accounts. Help uses local credentials and does not contact the server.
 
-# With description and language
-cat script.py | snip --desc "My script" --lang python
+```bash
+# Share a file, guessing syntax from its extension
+snip main.rs
+
+# Override the description and syntax
+snip LICENSE -d "Project license" -l markdown
+
+# An explicit post works the same way; -- ends option parsing
+snip post -d "" -l markdown -- LICENSE
+
+# Pipe text, or use - explicitly for stdin
+echo "code here" | snip
+cat script.py | snip - -l python
 
 # Available languages: bash, c, cpp, css, go, html, java, javascript,
 # json, kotlin, lua, markdown, php, python, ruby, rust, scala,
 # shell, sql, swift, typescript, yaml, zig (and plaintext)
 ```
+
+File posts use the filename as their default description. `-d ""` leaves it empty. Piped input has no automatic description or language. Files and stdin accept UTF-8 text up to 5000 Unicode characters.
+
+Posting writes only the share URL to stdout. In a terminal, a short scissors message appears on stderr. Redirects and command substitution keep stdout clean.
 
 ### Browse Snippets
 

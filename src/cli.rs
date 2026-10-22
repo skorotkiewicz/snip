@@ -1,5 +1,5 @@
-use anyhow::{Result, bail};
-use clap::{CommandFactory, Parser, Subcommand};
+use anyhow::{Context as _, Result, bail};
+use clap::{CommandFactory, FromArgMatches, Parser, Subcommand};
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use std::io::{self, IsTerminal, Read, Write};
@@ -7,48 +7,117 @@ use std::path::{Path, PathBuf};
 
 #[derive(Parser)]
 #[command(name = "snip")]
-#[command(about = "CLI tool for the snipd snippet server", version)]
+#[command(
+    about = "A little home for your snippets",
+    version,
+    subcommand_precedence_over_arg = true
+)]
 struct Args {
-    #[arg(short, long, help = "API key (or set SNIP_API_KEY env var)")]
-    api_key: Option<String>,
+    #[command(flatten)]
+    connection: ConnectionOptions,
 
-    #[arg(short, long, help = "Server URL (or set SNIP_URL_SERVER env var)")]
-    server: Option<String>,
-
-    #[arg(short, long, help = "Description of the snippet (for default post)")]
-    desc: Option<String>,
-
-    #[arg(
-        short,
-        long,
-        help = "Language (for default post: plaintext,bash,c,cpp,csharp,css,go,html,java,javascript,json,kotlin,lua,markdown,php,python,ruby,rust,scala,shell,sql,swift,typescript,yaml,zig)"
-    )]
-    lang: Option<String>,
-
-    #[arg(
-        short,
-        long,
-        help = "Config file path (or set SNIP_CONFIG env var, default: ~/.config/snip/config.json)"
-    )]
-    config: Option<PathBuf>,
+    #[command(flatten)]
+    input: PostInput,
 
     #[command(subcommand)]
     command: Option<Command>,
 }
 
+impl Args {
+    fn validate_input(&self) -> Result<()> {
+        if self.command.is_some()
+            && (self.input.file.is_some() || self.input.desc.is_some() || self.input.lang.is_some())
+        {
+            bail!("Put the file and its options after post: snip post FILE -l markdown");
+        }
+        Ok(())
+    }
+}
+
+#[derive(clap::Args, Default)]
+struct ConnectionOptions {
+    /// API key, or SNIP_API_KEY
+    #[arg(short, long, global = true, hide_short_help = true)]
+    api_key: Option<String>,
+
+    /// Server URL, or SNIP_URL_SERVER
+    #[arg(short, long, global = true, hide_short_help = true)]
+    server: Option<String>,
+
+    /// Credentials file, or SNIP_CONFIG (default: ~/.config/snip/config.json)
+    #[arg(short, long, global = true, hide_short_help = true)]
+    config: Option<PathBuf>,
+}
+
+#[derive(clap::Args, Default)]
+struct PostInput {
+    /// File to share; use - or pipe text to read stdin
+    #[arg(value_name = "FILE")]
+    file: Option<PathBuf>,
+
+    /// A short description
+    #[arg(short, long)]
+    desc: Option<String>,
+
+    /// Syntax language; guessed from the file extension when omitted
+    #[arg(short, long)]
+    lang: Option<String>,
+}
+
+impl PostInput {
+    fn use_file_defaults(&mut self) {
+        let Some(file) = self.file.as_deref().filter(|path| *path != Path::new("-")) else {
+            return;
+        };
+        if self.desc.is_none() {
+            self.desc = file
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned());
+        }
+        if self.lang.is_none() {
+            self.lang = infer_language(file).map(str::to_owned);
+        }
+    }
+}
+
+fn infer_language(file: &Path) -> Option<&'static str> {
+    let extension = file.extension()?.to_str()?.to_ascii_lowercase();
+    Some(match extension.as_str() {
+        "rs" => "rust",
+        "py" | "pyw" => "python",
+        "md" | "markdown" => "markdown",
+        "js" | "mjs" | "cjs" | "jsx" => "javascript",
+        "ts" | "tsx" | "mts" | "cts" => "typescript",
+        "sh" | "bash" => "bash",
+        "zsh" => "shell",
+        "c" | "h" => "c",
+        "cpp" | "cc" | "cxx" | "hpp" => "cpp",
+        "cs" => "csharp",
+        "css" => "css",
+        "go" => "go",
+        "htm" | "html" => "html",
+        "java" => "java",
+        "json" => "json",
+        "kt" | "kts" => "kotlin",
+        "lua" => "lua",
+        "php" => "php",
+        "rb" => "ruby",
+        "scala" | "sc" => "scala",
+        "sql" => "sql",
+        "swift" => "swift",
+        "yml" | "yaml" => "yaml",
+        "zig" => "zig",
+        "txt" => "plaintext",
+        _ => return None,
+    })
+}
+
 #[derive(Subcommand)]
 enum Command {
-    /// Post a snippet (default if stdin provided)
+    /// Share a file or piped text
     Post {
-        #[arg(short, long, help = "Description of the snippet")]
-        desc: Option<String>,
-
-        #[arg(
-            short,
-            long,
-            help = "Language (plaintext,bash,c,cpp,csharp,css,go,html,java,javascript,json,kotlin,lua,markdown,php,python,ruby,rust,scala,shell,sql,swift,typescript,yaml,zig)"
-        )]
-        lang: Option<String>,
+        #[command(flatten)]
+        input: PostInput,
     },
 
     /// Get a snippet by ID
@@ -251,7 +320,7 @@ struct Context {
 }
 
 impl Context {
-    fn new(args: &Args) -> Result<Self> {
+    fn new(args: &ConnectionOptions) -> Result<Self> {
         let config_path = match args
             .config
             .clone()
@@ -314,24 +383,18 @@ impl Context {
 
     fn whoami(&self) -> Result<()> {
         if let Some(config) = &self.config {
-            println!("Server: {}", config.server);
-            println!("Username: {}", config.username);
-            println!(
-                "API Key: {}...",
-                config.api_key.chars().take(8).collect::<String>()
-            );
+            println!("{} @ {}", config.username, self.server);
+        } else if self.api_key.is_some() {
+            println!("API key ready @ {}", self.server);
         } else {
-            println!("Not logged in. Use 'snip login' or 'snip register'.");
+            println!("Not signed in. Your first snip starts with: snip login USERNAME");
         }
         Ok(())
     }
 
     fn logout(&self) -> Result<()> {
         Config::clear(&self.config_path)?;
-        println!(
-            "Logged out. Credentials cleared from {}.",
-            self.config_path.display()
-        );
+        println!("Saved login cleared. Catch you next snip.");
         Ok(())
     }
 
@@ -352,8 +415,8 @@ impl Context {
                 username: username.clone(),
             };
             config.save(&self.config_path)?;
-            println!("Logged in as: {}", username);
-            println!("Credentials saved to {}", self.config_path.display());
+            println!("You're in, {}. Ready, set, snip.", username);
+            terminal_note("Try: snip FILE -l markdown");
         } else {
             return Err(api_error(response).await);
         }
@@ -377,8 +440,8 @@ impl Context {
                 username: username.clone(),
             };
             config.save(&self.config_path)?;
-            println!("Registered and logged in as: {}", username);
-            println!("Credentials saved to {}", self.config_path.display());
+            println!("Welcome aboard, {}. Your first snip awaits.", username);
+            terminal_note("Try: snip FILE -l markdown");
         } else {
             return Err(api_error(response).await);
         }
@@ -407,13 +470,8 @@ impl Context {
 
         if response.status().is_success() {
             let snippet: Snippet = response.json().await?;
-            println!("Snippet created! ID: {}", snippet.id);
-            if let Some(desc) = &snippet.description
-                && !desc.is_empty()
-            {
-                println!("Description: {}", desc);
-            }
-            println!("View at: {}/s/{}", self.server, snippet.id);
+            terminal_note(&format!("✂ snip! #{} is out in the world.", snippet.id));
+            println!("{}/s/{}", self.server, snippet.id);
         } else {
             return Err(api_error(response).await);
         }
@@ -566,7 +624,7 @@ impl Context {
             .await?;
 
         if response.status().is_success() {
-            println!("Snippet {} deleted successfully", id);
+            println!("Snip #{} is gone. Room for the next idea.", id);
         } else {
             return Err(api_error(response).await);
         }
@@ -585,7 +643,7 @@ impl Context {
         if response.status().is_success() {
             let result: StarResponse = response.json().await?;
             println!(
-                "Starred snippet {}. Total stars: {}",
+                "A little appreciation for #{}. Stars: {}",
                 id, result.total_stars
             );
         } else {
@@ -605,10 +663,7 @@ impl Context {
 
         if response.status().is_success() {
             let result: StarResponse = response.json().await?;
-            println!(
-                "Unstarred snippet {}. Total stars: {}",
-                id, result.total_stars
-            );
+            println!("Unstarred #{}. Stars: {}", id, result.total_stars);
         } else {
             return Err(api_error(response).await);
         }
@@ -627,7 +682,7 @@ impl Context {
         if response.status().is_success() {
             let result: ForkResponse = response.json().await?;
             println!(
-                "Forked snippet {} as {}. Total forks: {}",
+                "A new branch for #{}: #{}. Forks: {}",
                 id, result.forked_id, result.total_forks
             );
         } else {
@@ -638,6 +693,40 @@ impl Context {
 }
 
 // ===== Helpers =====
+
+fn read_snippet(file: Option<&Path>, stdin: impl Read) -> Result<String> {
+    // Every Unicode scalar value takes at most four UTF-8 bytes.
+    let max_bytes = snip::config::MAX_CONTENT_LENGTH * 4;
+    let mut bytes = Vec::new();
+    match file.filter(|path| *path != Path::new("-")) {
+        Some(path) => {
+            std::fs::File::open(path)
+                .with_context(|| format!("Cannot open {}", path.display()))?
+                .take(max_bytes as u64 + 1)
+                .read_to_end(&mut bytes)?;
+        }
+        None => {
+            stdin.take(max_bytes as u64 + 1).read_to_end(&mut bytes)?;
+        }
+    }
+    if bytes.len() > max_bytes {
+        bail!(
+            "That snip is too big. The limit is {} characters.",
+            snip::config::MAX_CONTENT_LENGTH
+        );
+    }
+    let content = String::from_utf8(bytes).context("Snippets need UTF-8 text")?;
+    if content.chars().count() > snip::config::MAX_CONTENT_LENGTH {
+        bail!(
+            "That snip is too big. The limit is {} characters.",
+            snip::config::MAX_CONTENT_LENGTH
+        );
+    }
+    if content.trim().is_empty() {
+        bail!("Nothing to snip yet. Try: snip LICENSE -l markdown");
+    }
+    Ok(content)
+}
 
 fn normalize_server(server: &str) -> Result<String> {
     let url = reqwest::Url::parse(server)?;
@@ -718,67 +807,140 @@ fn format_time_ago(date_str: &str) -> String {
     }
 }
 
+#[derive(Clone, Copy)]
+enum HelpStyle {
+    Brief,
+    Detailed,
+}
+
+fn help_command(context: Option<&Context>, style: HelpStyle) -> clap::Command {
+    let signed_in = context.is_some_and(|context| context.api_key.is_some());
+    let status = match context {
+        Some(context) if signed_in => match &context.config {
+            Some(config) => format!("{} @ {} • ready to snip", config.username, context.server),
+            None => format!("API key ready @ {}", context.server),
+        },
+        _ => "Your next little idea belongs here. Sign in to share it.".to_owned(),
+    };
+    Args::command()
+        .disable_help_subcommand(true)
+        .before_help(format!("✂ snip\n{status}"))
+        .after_help(
+            "Try a snip:
+  snip main.rs
+  snip LICENSE -l markdown
+  cat main.rs | snip -l rust
+
+More tools: snip --help",
+        )
+        .mut_subcommands(|command| {
+            let hidden = match command.get_name() {
+                "login" | "register" => signed_in,
+                "get" | "search" => false,
+                "post" | "delete" | "logout" | "whoami" => !signed_in,
+                _ => !signed_in || matches!(style, HelpStyle::Brief),
+            };
+            command.hide(hidden)
+        })
+}
+
+// Read connection flags even when Clap will exit for help or a missing command argument.
+// The real parser below still validates every argument and renders all errors.
+fn argument_preview(arguments: &[std::ffi::OsString]) -> Result<clap::ArgMatches, clap::Error> {
+    fn without_help(command: clap::Command) -> clap::Command {
+        command
+            .disable_help_flag(true)
+            .disable_version_flag(true)
+            .disable_help_subcommand(true)
+            .mut_subcommands(without_help)
+    }
+    without_help(Args::command())
+        .arg(
+            clap::Arg::new("short_help")
+                .short('h')
+                .global(true)
+                .action(clap::ArgAction::SetTrue),
+        )
+        .arg(
+            clap::Arg::new("long_help")
+                .long("help")
+                .global(true)
+                .action(clap::ArgAction::SetTrue),
+        )
+        .arg(
+            clap::Arg::new("show_version")
+                .short('V')
+                .long("version")
+                .global(true)
+                .action(clap::ArgAction::SetTrue),
+        )
+        .ignore_errors(true)
+        .try_get_matches_from(arguments)
+}
+
+fn terminal_note(message: &str) {
+    if io::stderr().is_terminal() {
+        eprintln!("{message}");
+    }
+}
+
 // ===== Main =====
 
 #[tokio::main]
 async fn main() {
     if let Err(e) = run().await {
-        eprintln!("{:?}", e);
+        eprintln!("snip: {e:#}");
         std::process::exit(1);
     }
 }
 
 async fn run() -> Result<()> {
-    let args = Args::parse();
+    let arguments: Vec<_> = std::env::args_os().collect();
+    let preview = argument_preview(&arguments)?;
+    let connection = ConnectionOptions::from_arg_matches(&preview)?;
+    let context = Context::new(&connection);
+    let style = if preview.get_flag("long_help") {
+        HelpStyle::Detailed
+    } else {
+        HelpStyle::Brief
+    };
+    let mut help = help_command(context.as_ref().ok(), style);
+    let matches = help.clone().get_matches_from(arguments);
+    let args = Args::from_arg_matches(&matches)?;
+    args.validate_input()?;
     if let Some(Command::Complete { shell }) = &args.command {
         let mut command = Args::command();
         let name = command.get_name().to_owned();
         clap_complete::generate(*shell, &mut command, name, &mut io::stdout());
         return Ok(());
     }
-    let ctx = Context::new(&args)?;
-
-    let mut stdin_content: Option<String> = None;
+    let ctx = context?;
 
     let command = match args.command {
-        Some(cmd) => cmd,
+        Some(command) => command,
         None => {
-            if io::stdin().is_terminal() {
-                let mut cmd = Args::command();
-                cmd.print_help()?;
+            if args.input.file.is_none()
+                && args.input.desc.is_none()
+                && args.input.lang.is_none()
+                && io::stdin().is_terminal()
+            {
+                help.print_help()?;
                 println!();
-                std::process::exit(1);
+                return Ok(());
             }
-
-            let mut buf = String::new();
-            io::stdin().read_to_string(&mut buf)?;
-
-            if buf.trim().is_empty() {
-                bail!("No input provided. Pipe content to post a snippet, or use a subcommand.");
-            }
-
-            stdin_content = Some(buf);
-            Command::Post {
-                desc: args.desc,
-                lang: args.lang,
-            }
+            Command::Post { input: args.input }
         }
     };
 
     match command {
-        Command::Post { desc, lang } => {
-            let content = match stdin_content {
-                Some(c) => c,
-                None => {
-                    let mut c = String::new();
-                    io::stdin().read_to_string(&mut c)?;
-                    if c.trim().is_empty() {
-                        bail!("No content provided. Pipe content to snip post.");
-                    }
-                    c
-                }
-            };
-            ctx.post(desc, lang, content).await?;
+        Command::Post { mut input } => {
+            ctx.require_api_key()?;
+            input.use_file_defaults();
+            if input.file.is_none() && io::stdin().is_terminal() {
+                bail!("Give me a file or pipe some text: snip LICENSE -l markdown");
+            }
+            let content = read_snippet(input.file.as_deref(), io::stdin().lock())?;
+            ctx.post(input.desc, input.lang, content).await?;
         }
         Command::Get { id, raw } => ctx.get(id, raw).await?,
         Command::Search { query, lang, limit } => ctx.search(query, lang, limit).await?,
@@ -831,6 +993,215 @@ mod tests {
     }
 
     #[test]
+    fn explicit_post_accepts_a_file_after_options() {
+        let parsed =
+            Args::try_parse_from(["snip", "post", "-d", "", "-l", "markdown", "--", "LICENSE"]);
+        assert!(
+            parsed.is_ok(),
+            "posting a file must parse: {}",
+            parsed
+                .err()
+                .map(|error| error.to_string())
+                .unwrap_or_default()
+        );
+    }
+
+    #[test]
+    fn default_post_accepts_a_file() {
+        assert!(
+            Args::try_parse_from(["snip", "LICENSE", "-l", "markdown"]).is_ok(),
+            "the default command must accept a file"
+        );
+    }
+
+    #[test]
+    fn file_input_and_stdin_share_validation() {
+        let path = test_config_path();
+        std::fs::write(&path, "  hello \n").expect("create input fixture");
+        assert_eq!(
+            read_snippet(Some(&path), &b"ignored"[..]).expect("read file"),
+            "  hello \n"
+        );
+        assert_eq!(
+            read_snippet(None, &b"piped text"[..]).expect("read pipe"),
+            "piped text"
+        );
+        assert_eq!(
+            read_snippet(Some(Path::new("-")), &b"stdin"[..]).expect("read explicit stdin"),
+            "stdin"
+        );
+        assert!(
+            read_snippet(None, &b"  \n"[..]).is_err(),
+            "empty content must fail before an HTTP request"
+        );
+        assert!(
+            read_snippet(None, &b"\xff"[..]).is_err(),
+            "binary content must fail clearly"
+        );
+        let unicode = "界".repeat(snip::config::MAX_CONTENT_LENGTH);
+        assert_eq!(
+            read_snippet(None, unicode.as_bytes()).expect("accept Unicode limit"),
+            unicode
+        );
+        assert!(
+            read_snippet(
+                None,
+                "a".repeat(snip::config::MAX_CONTENT_LENGTH + 1).as_bytes()
+            )
+            .is_err(),
+            "reject oversized text"
+        );
+        Config::clear(&path).expect("remove input fixture");
+        assert!(
+            read_snippet(Some(&path), &b""[..]).is_err(),
+            "missing files must fail clearly"
+        );
+    }
+
+    #[test]
+    fn file_defaults_save_typing_and_preserve_overrides() {
+        let mut input = PostInput {
+            file: Some("src/main.rs".into()),
+            ..PostInput::default()
+        };
+        input.use_file_defaults();
+        assert_eq!(input.desc.as_deref(), Some("main.rs"));
+        assert_eq!(input.lang.as_deref(), Some("rust"));
+        let mut input = PostInput {
+            file: Some("README.md".into()),
+            desc: Some(String::new()),
+            lang: Some("plaintext".into()),
+        };
+        input.use_file_defaults();
+        assert_eq!(
+            input.desc.as_deref(),
+            Some(""),
+            "an explicit empty description stays empty"
+        );
+        assert_eq!(input.lang.as_deref(), Some("plaintext"));
+        let mut input = PostInput {
+            file: Some("-".into()),
+            ..PostInput::default()
+        };
+        input.use_file_defaults();
+        assert!(
+            input.desc.is_none() && input.lang.is_none(),
+            "stdin must not inherit file metadata"
+        );
+        assert_eq!(infer_language(Path::new("README.MD")), Some("markdown"));
+        assert_eq!(infer_language(Path::new("LICENSE")), None);
+    }
+
+    #[test]
+    fn parsing_does_not_mix_file_input_with_other_commands() {
+        let mixed =
+            Args::try_parse_from(["snip", "LICENSE", "get", "1"]).expect("parse mixed input");
+        assert!(
+            mixed.validate_input().is_err(),
+            "a file must never be silently ignored"
+        );
+        assert!(
+            Args::try_parse_from(["snip", "get", "1", "--server", "https://example.com"]).is_ok(),
+            "connection flags must work after commands"
+        );
+        let configured = Args::try_parse_from(["snip", "--config", "custom.json", "get", "1"])
+            .expect("connection flags may precede commands");
+        assert!(
+            matches!(configured.command, Some(Command::Get { id: 1, .. })),
+            "connection flags must not consume the command"
+        );
+        assert!(
+            configured.validate_input().is_ok(),
+            "connection flags are independent of snippet input"
+        );
+        let input = Args::try_parse_from(["snip", "--", "login"])
+            .expect("escape a filename matching a command");
+        assert_eq!(input.input.file.as_deref(), Some(Path::new("login")));
+    }
+
+    #[test]
+    fn help_follows_the_login_state_and_keeps_account_switching_available() {
+        let guest = help_command(None, HelpStyle::Brief)
+            .render_help()
+            .to_string();
+        assert!(
+            guest.contains("  login ") && guest.contains("  register "),
+            "guests need sign-in commands"
+        );
+        assert!(
+            !guest.contains("  logout ") && !guest.contains("  change-password "),
+            "guests do not need account management"
+        );
+        let context = Context {
+            client: reqwest::Client::new(),
+            config_path: test_config_path(),
+            config: Some(Config {
+                username: "alice".into(),
+                server: "https://example.com".into(),
+                api_key: "key".into(),
+            }),
+            server: "https://example.com".into(),
+            api_key: Some("key".into()),
+        };
+        let brief = help_command(Some(&context), HelpStyle::Brief)
+            .render_help()
+            .to_string();
+        assert!(
+            brief.contains("alice @ https://example.com"),
+            "show the active account and server"
+        );
+        assert!(
+            !brief.contains("  login ") && !brief.contains("  register "),
+            "signed-in help should omit sign-in commands"
+        );
+        assert!(
+            brief.contains("  post ") && brief.contains("  logout "),
+            "show useful signed-in actions"
+        );
+        assert!(
+            !brief.contains("  complete ") && !brief.contains("--api-key"),
+            "short help should stay short"
+        );
+        let detailed = help_command(Some(&context), HelpStyle::Detailed)
+            .render_long_help()
+            .to_string();
+        assert!(
+            detailed.contains("  complete ") && detailed.contains("--api-key"),
+            "full help exposes advanced tools"
+        );
+        assert!(
+            help_command(Some(&context), HelpStyle::Brief)
+                .try_get_matches_from(["snip", "login", "bob"])
+                .is_ok(),
+            "hidden login remains available to switch accounts"
+        );
+    }
+
+    #[test]
+    fn help_preview_reads_connection_flags_after_help_and_subcommands() {
+        let arguments: Vec<_> = [
+            "snip",
+            "get",
+            "--help",
+            "--server",
+            "https://example.com",
+            "--config",
+            "custom.json",
+        ]
+        .map(std::ffi::OsString::from)
+        .into();
+        let preview = argument_preview(&arguments).expect("preview incomplete command help");
+        let connection =
+            ConnectionOptions::from_arg_matches(&preview).expect("read connection flags");
+        assert_eq!(connection.server.as_deref(), Some("https://example.com"));
+        assert_eq!(connection.config.as_deref(), Some(Path::new("custom.json")));
+        assert!(
+            preview.get_flag("long_help"),
+            "retain the request for full help"
+        );
+    }
+
+    #[test]
     fn server_urls_are_normalized_and_validated() {
         assert_eq!(
             normalize_server("HTTP://EXAMPLE.COM:80/base/").expect("valid server"),
@@ -867,7 +1238,7 @@ mod tests {
             "http://localhost:3001",
         ])
         .expect("parse arguments");
-        let context = Context::new(&args).expect("create context");
+        let context = Context::new(&args.connection).expect("create context");
         assert!(
             context.config.is_none(),
             "another server must not inherit saved credentials"
