@@ -1,5 +1,5 @@
-//! Snip - A simple snippet sharing service
-//!
-//! This crate provides both a server binary (`snipped`) and a CLI tool (`snip`).
+//! Shared configuration for the `snipd` server and `snip` CLI.
+
+#![warn(missing_docs)]
 
 pub mod config;

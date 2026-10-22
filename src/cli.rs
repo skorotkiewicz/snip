@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 
 #[derive(Parser)]
 #[command(name = "snip")]
-#[command(about = "CLI tool for snipped snippet server", version)]
+#[command(about = "CLI tool for the snipd snippet server", version)]
 struct Args {
     #[arg(short, long, help = "API key (or set SNIP_API_KEY env var)")]
     api_key: Option<String>,
@@ -191,27 +191,45 @@ struct Config {
 }
 
 impl Config {
-    fn default_path() -> PathBuf {
-        let home = dirs::home_dir().expect("Could not find home directory");
-        home.join(".config").join("snip").join("config.json")
+    fn default_path() -> Result<PathBuf> {
+        let home = dirs::home_dir()
+            .ok_or_else(|| anyhow::anyhow!("Could not find home directory; provide --config"))?;
+        Ok(home.join(".config").join("snip").join("config.json"))
     }
 
-    fn load(path: &Path) -> Option<Self> {
-        if path.exists() {
-            let content = std::fs::read_to_string(path).ok()?;
-            serde_json::from_str(&content).ok()
-        } else {
-            None
+    fn load(path: &Path) -> Result<Option<Self>> {
+        match std::fs::read_to_string(path) {
+            Ok(content) => Ok(Some(serde_json::from_str(&content)?)),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+            Err(error) => Err(error.into()),
         }
     }
 
     fn save(&self, path: &Path) -> Result<()> {
-        if let Some(parent) = path.parent() {
+        if let Some(parent) = path.parent()
+            && !parent.as_os_str().is_empty()
+        {
             std::fs::create_dir_all(parent)?;
         }
-        let content = serde_json::to_string_pretty(self)?;
-        std::fs::write(path, content)?;
-        Ok(())
+        let temporary = path.with_extension(format!("{}.tmp", uuid::Uuid::new_v4()));
+        let mut options = std::fs::OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        let result = (|| -> Result<()> {
+            let mut file = options.open(&temporary)?;
+            file.write_all(serde_json::to_string_pretty(self)?.as_bytes())?;
+            file.sync_all()?;
+            std::fs::rename(&temporary, path)?;
+            Ok(())
+        })();
+        if result.is_err() {
+            let _ = std::fs::remove_file(&temporary);
+        }
+        result
     }
 
     fn clear(path: &Path) -> Result<()> {
@@ -234,45 +252,53 @@ struct Context {
 
 impl Context {
     fn new(args: &Args) -> Result<Self> {
-        let config_path = args
+        let config_path = match args
             .config
             .clone()
-            .or_else(|| std::env::var("SNIP_CONFIG").map(PathBuf::from).ok())
-            .unwrap_or_else(Config::default_path);
+            .or_else(|| std::env::var_os("SNIP_CONFIG").map(PathBuf::from))
+        {
+            Some(path) => path,
+            None => Config::default_path()?,
+        };
 
-        let config = Config::load(&config_path);
+        let mut config = Config::load(&config_path)?;
 
         let server = args
             .server
-            .clone()
-            .filter(|s| !s.is_empty())
-            .or_else(|| {
-                config
-                    .as_ref()
-                    .map(|c| c.server.clone())
-                    .filter(|s| !s.is_empty())
-            })
+            .as_deref()
+            .filter(|value| !value.is_empty())
+            .map(str::to_owned)
             .or_else(|| {
                 std::env::var("SNIP_URL_SERVER")
                     .ok()
-                    .filter(|s| !s.is_empty())
+                    .filter(|value| !value.is_empty())
             })
-            .unwrap_or_else(|| snip::config::cli::DEFAULT_SERVER_URL.to_string());
-
+            .or_else(|| config.as_ref().map(|saved| saved.server.clone()))
+            .unwrap_or_else(|| snip::config::DEFAULT_SERVER_URL.to_owned());
+        let server = normalize_server(&server)?;
+        // Credentials are scoped to the saved server, including any base path.
+        config = config
+            .filter(|saved| normalize_server(&saved.server).is_ok_and(|saved| saved == server));
         let api_key = args
             .api_key
             .clone()
-            .filter(|k| !k.is_empty())
+            .filter(|key| !key.is_empty())
+            .or_else(|| {
+                std::env::var("SNIP_API_KEY")
+                    .ok()
+                    .filter(|key| !key.is_empty())
+            })
             .or_else(|| {
                 config
                     .as_ref()
-                    .map(|c| c.api_key.clone())
-                    .filter(|k| !k.is_empty())
-            })
-            .or_else(|| std::env::var("SNIP_API_KEY").ok().filter(|k| !k.is_empty()));
-
+                    .map(|saved| saved.api_key.clone())
+                    .filter(|key| !key.is_empty())
+            });
         Ok(Self {
-            client: reqwest::Client::new(),
+            client: reqwest::Client::builder()
+                .redirect(reqwest::redirect::Policy::none())
+                .timeout(std::time::Duration::from_secs(30))
+                .build()?,
             config_path,
             config,
             server,
@@ -292,7 +318,7 @@ impl Context {
             println!("Username: {}", config.username);
             println!(
                 "API Key: {}...",
-                &config.api_key[..config.api_key.len().min(8)]
+                config.api_key.chars().take(8).collect::<String>()
             );
         } else {
             println!("Not logged in. Use 'snip login' or 'snip register'.");
@@ -403,7 +429,7 @@ impl Context {
                 .await?;
             if response.status().is_success() {
                 let text = response.text().await?;
-                println!("{}", text);
+                print!("{}", text);
             } else {
                 return Err(api_error(response).await);
             }
@@ -448,17 +474,16 @@ impl Context {
     }
 
     async fn search(&self, query: String, lang: Option<String>, limit: i64) -> Result<()> {
-        let mut url = format!(
-            "{}/api/search?q={}&limit={}",
-            self.server,
-            urlencoding::encode(&query),
-            limit
-        );
+        let mut params = vec![("q", query), ("limit", limit.to_string())];
         if let Some(language) = lang {
-            url.push_str(&format!("&lang={}", language));
+            params.push(("lang", language));
         }
-
-        let response = self.client.get(&url).send().await?;
+        let response = self
+            .client
+            .get(format!("{}/api/search", self.server))
+            .query(&params)
+            .send()
+            .await?;
         if response.status().is_success() {
             let data: SearchResult = response.json().await?;
             if data.snippets.is_empty() {
@@ -614,6 +639,20 @@ impl Context {
 
 // ===== Helpers =====
 
+fn normalize_server(server: &str) -> Result<String> {
+    let url = reqwest::Url::parse(server)?;
+    if !matches!(url.scheme(), "http" | "https")
+        || url.host_str().is_none()
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.query().is_some()
+        || url.fragment().is_some()
+    {
+        bail!("Server must be an HTTP(S) URL without credentials, a query, or a fragment");
+    }
+    Ok(url.as_str().trim_end_matches('/').to_owned())
+}
+
 async fn api_error(response: reqwest::Response) -> anyhow::Error {
     let status = response.status();
     let text = response.text().await.unwrap_or_default();
@@ -639,7 +678,7 @@ fn prompt_password(prompt: &str) -> Result<String> {
     io::stdout().flush()?;
     let mut password = String::new();
     io::stdin().read_line(&mut password)?;
-    Ok(password.trim().to_string())
+    Ok(password.trim_end_matches(['\r', '\n']).to_owned())
 }
 
 fn format_time_ago(date_str: &str) -> String {
@@ -670,7 +709,7 @@ fn format_time_ago(date_str: &str) -> String {
         format!("{}h ago", hours)
     } else if days < 7 {
         format!("{}d ago", days)
-    } else if weeks < 4 {
+    } else if days < 30 {
         format!("{}w ago", weeks)
     } else if months < 12 {
         format!("{}mo ago", months)
@@ -691,6 +730,12 @@ async fn main() {
 
 async fn run() -> Result<()> {
     let args = Args::parse();
+    if let Some(Command::Complete { shell }) = &args.command {
+        let mut command = Args::command();
+        let name = command.get_name().to_owned();
+        clap_complete::generate(*shell, &mut command, name, &mut io::stdout());
+        return Ok(());
+    }
     let ctx = Context::new(&args)?;
 
     let mut stdin_content: Option<String> = None;
@@ -771,12 +816,101 @@ async fn run() -> Result<()> {
         Command::Star { id } => ctx.star(id).await?,
         Command::Unstar { id } => ctx.unstar(id).await?,
         Command::Fork { id } => ctx.fork(id).await?,
-        Command::Complete { shell } => {
-            let mut cmd = Args::command();
-            let name = cmd.get_name().to_string();
-            clap_complete::generate(shell, &mut cmd, name, &mut std::io::stdout());
-        }
+        Command::Complete { .. } => unreachable!("completions return before loading configuration"),
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_config_path() -> PathBuf {
+        std::env::temp_dir().join(format!("snip-cli-{}.json", uuid::Uuid::new_v4()))
+    }
+
+    #[test]
+    fn server_urls_are_normalized_and_validated() {
+        assert_eq!(
+            normalize_server("HTTP://EXAMPLE.COM:80/base/").expect("valid server"),
+            "http://example.com/base"
+        );
+        for url in [
+            "file:///tmp/test",
+            "https://user:password@example.com",
+            "https://example.com?key=secret",
+            "https://example.com#fragment",
+        ] {
+            assert!(
+                normalize_server(url).is_err(),
+                "reject invalid server URL: {url}"
+            );
+        }
+    }
+
+    #[test]
+    fn saved_credentials_are_scoped_to_their_server() {
+        let path = test_config_path();
+        Config {
+            server: "http://localhost:3000/".into(),
+            api_key: "saved-secret".into(),
+            username: "alice".into(),
+        }
+        .save(&path)
+        .expect("save test config");
+        let args = Args::try_parse_from([
+            "snip",
+            "--config",
+            path.to_str().expect("UTF-8 test path"),
+            "--server",
+            "http://localhost:3001",
+        ])
+        .expect("parse arguments");
+        let context = Context::new(&args).expect("create context");
+        assert!(
+            context.config.is_none(),
+            "another server must not inherit saved credentials"
+        );
+        assert_ne!(context.api_key.as_deref(), Some("saved-secret"));
+        Config::clear(&path).expect("clean up test config");
+    }
+
+    #[test]
+    fn saved_credentials_replace_existing_files_and_report_corruption() {
+        let path = test_config_path();
+        std::fs::write(&path, "invalid JSON").expect("write corrupt config");
+        assert!(
+            Config::load(&path).is_err(),
+            "invalid configuration must be reported"
+        );
+        Config {
+            server: "https://example.com".into(),
+            api_key: "secret".into(),
+            username: "alice".into(),
+        }
+        .save(&path)
+        .expect("replace test config");
+        assert_eq!(
+            Config::load(&path)
+                .expect("load saved config")
+                .expect("config exists")
+                .api_key,
+            "secret"
+        );
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(&path)
+                .expect("config metadata")
+                .permissions()
+                .mode();
+            assert_eq!(
+                mode & 0o777,
+                0o600,
+                "credentials must be readable only by their owner"
+            );
+        }
+        Config::clear(&path).expect("clean up test config");
+    }
 }

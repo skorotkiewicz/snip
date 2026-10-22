@@ -220,6 +220,12 @@ pub const INDEX_HTML: &str = r##"
             border: 1px solid var(--border-strong);
             margin-bottom: 0.5rem;
         }
+        .snippet-content.is-collapsed {
+            max-height: 288px;
+            overflow: hidden;
+        }
+        .snippet-content.is-collapsed pre { overflow: hidden; }
+        .snippet-expand { margin-bottom: 0.5rem; }
         .snippet-content pre {
             margin: 0;
             font-family: inherit;
@@ -641,6 +647,7 @@ pub const INDEX_HTML: &str = r##"
 
     // ===== Configuration =====
     const PER_PAGE = 10;
+    const SNIPPET_PREVIEW_HEIGHT = 288;
 
     // ===== State =====
     const state = {
@@ -656,14 +663,14 @@ pub const INDEX_HTML: &str = r##"
 
     // Parse URL routing
     const pathParts = window.location.pathname.split('/');
-    if (pathParts[1] === 'u' && pathParts[2]) state.profileUser = pathParts[2];
+    if (pathParts[1] === 'u' && pathParts[2]) state.profileUser = decodeURIComponent(pathParts[2]);
     if (pathParts[1] === 's' && pathParts[2]) state.snippetId = pathParts[2];
 
     // ===== Utilities =====
     function escapeHtml(text) {
-        const d = document.createElement('div');
-        d.textContent = text;
-        return d.innerHTML;
+        return String(text ?? '').replace(/[&<>"']/g, char => ({
+            '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+        })[char]);
     }
 
     function formatDate(dateStr) {
@@ -810,7 +817,7 @@ pub const INDEX_HTML: &str = r##"
         container.innerHTML = snippets.map(s => {
             const author = state.profileUser
                 ? escapeHtml(s.author)
-                : `<a href="/u/${escapeHtml(s.author)}">${escapeHtml(s.author)}</a>`;
+                : `<a href="/u/${escapeHtml(encodeURIComponent(s.author))}">${escapeHtml(s.author)}</a>`;
             const langTag = s.language && s.language !== 'plaintext'
                 ? `<span class="snippet-lang">${escapeHtml(s.language)}</span>` : '';
             const desc = (s.description || langTag)
@@ -833,16 +840,37 @@ pub const INDEX_HTML: &str = r##"
             const forkedFrom = s.forked_from
                 ? ` · <span class="forked-from">forked from <a href="/s/${s.forked_from}">/s/${s.forked_from}</a></span>`
                 : '';
-            const langClass = s.language && s.language !== 'plaintext' ? ` class="language-${s.language}"` : '';
+            const langClass = s.language && s.language !== 'plaintext' ? ` class="language-${escapeHtml(s.language)}"` : '';
             const views = s.views || 0;
             return `<div class="snippet" id="snippet-${s.id}">
                     ${desc}
-                    <div class="snippet-content"><pre><code${langClass}>${escapeHtml(s.content)}</code></pre></div>
+                    <div class="snippet-content" id="snippet-content-${s.id}"><pre><code${langClass}>${escapeHtml(s.content)}</code></pre></div>
+                    <button type="button" class="btn btn-secondary snippet-expand" data-action="expand" data-id="${s.id}" aria-controls="snippet-content-${s.id}" aria-expanded="false" hidden>Show more</button>
                     <div class="snippet-meta">${author} · <a href="/s/${s.id}">${formatDate(s.created_at)}</a> · ${views} views${starBtn}${forkBtn}${commentBtn}${forkedFrom} · <a href="/raw/${s.id}" class="raw-link">raw</a>${deleteBtn}</div>
                 </div>`;
         }).join('');
 
-        container.querySelectorAll('pre code').forEach(block => hljs.highlightElement(block));
+        if (window.hljs) {
+            container.querySelectorAll('pre code').forEach(block => hljs.highlightElement(block));
+        }
+        updateSnippetPreviews();
+    }
+
+    function updateSnippetPreviews() {
+        document.querySelectorAll('.snippet-expand').forEach(button => {
+            const content = document.getElementById(button.getAttribute('aria-controls'));
+            const overflowing = content.querySelector('pre').scrollHeight > SNIPPET_PREVIEW_HEIGHT;
+            const expanded = button.getAttribute('aria-expanded') === 'true';
+            button.hidden = !overflowing;
+            content.classList.toggle('is-collapsed', overflowing && !expanded);
+        });
+    }
+
+    function toggleSnippetPreview(button) {
+        const expanded = button.getAttribute('aria-expanded') !== 'true';
+        button.setAttribute('aria-expanded', String(expanded));
+        button.textContent = expanded ? 'Show less' : 'Show more';
+        updateSnippetPreviews();
     }
 
     function renderPagination() {
@@ -893,14 +921,16 @@ pub const INDEX_HTML: &str = r##"
             if (state.searchLang !== 'all') params.append('lang', state.searchLang);
             url = `/api/search?${params}`;
         } else if (state.profileUser) {
-            url = `/api/users/${state.profileUser}/snippets?page=${page}&limit=${PER_PAGE}`;
+            url = `/api/users/${encodeURIComponent(state.profileUser)}/snippets?page=${page}&limit=${PER_PAGE}`;
         } else {
             url = `/api/snippets?page=${page}&limit=${PER_PAGE}`;
         }
         try {
             const resp = await apiFetch(url, { apiKey });
+            if (!resp.ok) throw new Error('Failed to load snippets');
             const data = await resp.json();
             state.totalPages = Math.ceil(data.total / PER_PAGE) || 1;
+            if (page > state.totalPages) return loadSnippets(state.totalPages);
             renderSnippets(data.snippets);
             renderPagination();
         } catch (e) {
@@ -1016,7 +1046,8 @@ pub const INDEX_HTML: &str = r##"
         try {
             const resp = await apiFetch(`/api/snippets/${id}`, { method: 'DELETE', apiKey });
             if (resp.ok) {
-                document.getElementById(`snippet-${id}`)?.remove();
+                if (state.snippetId) window.location.assign('/');
+                else await loadSnippets(state.page);
                 toast('Snippet deleted', 'success');
             } else if (resp.status === 403) {
                 toast('Can only delete your own snippets', 'error');
@@ -1132,6 +1163,7 @@ pub const INDEX_HTML: &str = r##"
             if (resp.ok) {
                 const data = await resp.json();
                 setAuth(data.api_key, data.username);
+                document.getElementById('login-pass').value = '';
                 showApiKey(data.api_key);
                 msgDiv.innerHTML = '<div class="msg-success">login successful</div>';
                 refreshSnippets();
@@ -1152,11 +1184,11 @@ pub const INDEX_HTML: &str = r##"
         if (!username || !password) {
             msgDiv.innerHTML = '<div class="msg-error">enter username and password</div>'; return;
         }
-        if (username.length < 3 || username.length > 32) {
-            msgDiv.innerHTML = '<div class="msg-error">username must be 3-32 characters</div>'; return;
+        if (!/^[A-Za-z0-9_-]{3,32}$/.test(username)) {
+            msgDiv.innerHTML = '<div class="msg-error">username must be 3-32 ASCII letters, digits, underscores, or hyphens</div>'; return;
         }
-        if (password.length < 6) {
-            msgDiv.innerHTML = '<div class="msg-error">password must be at least 6 characters</div>'; return;
+        if ([...password].length < 6 || new TextEncoder().encode(password).length > 72) {
+            msgDiv.innerHTML = '<div class="msg-error">password must be at least 6 characters and at most 72 UTF-8 bytes</div>'; return;
         }
         try {
             const resp = await fetch('/api/register', {
@@ -1167,6 +1199,7 @@ pub const INDEX_HTML: &str = r##"
             if (resp.ok) {
                 const data = await resp.json();
                 setAuth(data.api_key, data.username);
+                document.getElementById('login-pass').value = '';
                 showApiKey(data.api_key);
                 msgDiv.innerHTML = '<div class="msg-success">registration successful</div>';
                 document.getElementById('register-user').value = '';
@@ -1213,8 +1246,8 @@ pub const INDEX_HTML: &str = r##"
         if (!oldPass || !newPass) {
             msgDiv.innerHTML = '<div class="msg-error">enter both old and new passwords</div>'; return;
         }
-        if (newPass.length < 6) {
-            msgDiv.innerHTML = '<div class="msg-error">new password must be at least 6 characters</div>'; return;
+        if ([...newPass].length < 6 || new TextEncoder().encode(newPass).length > 72) {
+            msgDiv.innerHTML = '<div class="msg-error">new password must be at least 6 characters and at most 72 UTF-8 bytes</div>'; return;
         }
         try {
             const resp = await apiFetch('/api/change-password', {
@@ -1377,6 +1410,7 @@ pub const INDEX_HTML: &str = r##"
             if (action === 'delete') deleteSnippet(id);
             if (action === 'star') toggleStar(id, btn);
             if (action === 'fork') forkSnippet(id);
+            if (action === 'expand') toggleSnippetPreview(btn);
         });
 
         // Pagination (event delegation)
@@ -1405,6 +1439,7 @@ pub const INDEX_HTML: &str = r##"
     function init() {
         initTheme();
         bindEvents();
+        new ResizeObserver(updateSnippetPreviews).observe(document.getElementById('snippets'));
 
         // Restore logged-in state (keep auth box hidden until toggled)
         const { apiKey } = getAuth();
