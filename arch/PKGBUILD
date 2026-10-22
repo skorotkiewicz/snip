@@ -1,6 +1,6 @@
 # Maintainer: Sebastian Korotkiewicz <skorotkiewicz@gmail.com>
 pkgname=snip-rs
-pkgver=0.1.1
+pkgver=0.0.0
 pkgrel=1
 pkgdesc="A minimal snippet sharing service with API, CLI, and web frontend"
 arch=('x86_64' 'aarch64')
