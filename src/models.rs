@@ -1,17 +1,6 @@
 use serde::{Deserialize, Serialize};
 use snip::config;
 
-#[derive(Debug, Serialize)]
-#[allow(dead_code)]
-pub struct User {
-    pub id: i64,
-    pub username: String,
-    #[serde(skip_serializing)]
-    pub password_hash: String,
-    pub api_key: String,
-    pub created_at: String,
-}
-
 #[derive(Debug, Deserialize)]
 pub struct CreateUserRequest {
     pub username: String,
@@ -56,17 +45,6 @@ pub struct ChangePasswordResponse {
     pub message: String,
 }
 
-#[derive(Debug, Serialize)]
-#[allow(dead_code)]
-pub struct Snippet {
-    pub id: i64,
-    pub user_id: i64,
-    pub content: String,
-    pub description: Option<String>,
-    pub created_at: String,
-    pub views: i64,
-}
-
 #[derive(Debug, Serialize, sqlx::FromRow)]
 pub struct SnippetWithAuthor {
     pub id: i64,
@@ -106,7 +84,7 @@ pub struct CreateSnippetRequest {
 }
 
 impl CreateSnippetRequest {
-    pub fn validate_language(lang: &Option<String>) -> Option<String> {
+    pub fn validate_language(lang: Option<&str>) -> Option<String> {
         match lang {
             None => Some("plaintext".to_string()),
             Some(l) => {

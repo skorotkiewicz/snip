@@ -1,10 +1,10 @@
 [Unit]
-Description=Snipped - Snippet Sharing Server
+Description=Snipd - Snippet Sharing Server
 After=network.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/snipped
+ExecStart=/usr/bin/snipd
 Restart=on-failure
 RestartSec=5
 
@@ -18,7 +18,7 @@ WorkingDirectory=/var/lib/snip
 
 # Environment
 Environment="RUST_LOG=info"
-Environment="DATABASE_URL=sqlite:/var/lib/snip/snipped.db"
+Environment="DATABASE_URL=sqlite:/var/lib/snip/snip.db"
 Environment="SNIP_HOST=0.0.0.0"
 Environment="SNIP_PORT=3000"
 

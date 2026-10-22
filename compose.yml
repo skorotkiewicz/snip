@@ -1,0 +1,17 @@
+services:
+  snip:
+    build: .
+    image: snip
+    ports:
+      - "${SNIP_PORT:-3000}:${SNIP_PORT:-3000}"
+    volumes:
+      - snip_data:/data
+    environment:
+      DATABASE_URL: "${DATABASE_URL:-sqlite:/data/snip.db}"
+      SNIP_HOST: "${SNIP_HOST:-0.0.0.0}"
+      SNIP_PORT: "${SNIP_PORT:-3000}"
+      RUST_LOG: "${RUST_LOG:-info}"
+    restart: unless-stopped
+
+volumes:
+  snip_data:

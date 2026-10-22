@@ -6,8 +6,8 @@ A minimal, self-hosted snippet sharing service. Share code snippets via web UI, 
 
 ## Features
 
-- **Web UI** - Clean interface with syntax highlighting for 25+ languages
-- **CLI Tool** - Pipe snippets directly from terminal
+- **Web UI** - Syntax highlighting and expandable previews for long snippets
+- **CLI Tool** - Share files or piped text, with language detection and concise terminal feedback
 - **API** - RESTful API for integration
 - **Self-hosted** - Single binary + SQLite, no external dependencies
 - **Multi-platform** - Linux (x86_64, aarch64), macOS, Windows
@@ -33,14 +33,16 @@ docker run -d -p 3000:3000 -v snip_data:/data skorotkiewicz/snip:latest
 docker build -t snip .
 docker run -d -p 3000:3000 -v snip_data:/data snip
 
-# Or use docker-compose
-docker-compose up -d
+# Or use Docker Compose
+docker compose up -d
 ```
 
 **From source**:
 ```bash
 cargo install --path .
 ```
+
+Start the server with `snipd`. Source installs create `snip.db` in the working directory.
 
 ### 2. Create Account
 
@@ -56,7 +58,7 @@ snip login myusername
 snip --server https://pb.sekor.eu.org register myusername
 ```
 
-Credentials are saved to `~/.config/snip/config.json`.
+Credentials are saved to `~/.config/snip/config.json`, with owner-only file permissions on Unix. Saved API keys apply only to their configured server. Explicit flags override environment variables, which override saved configuration.
 
 ### 3. Share Snippets
 
@@ -64,19 +66,22 @@ Credentials are saved to `~/.config/snip/config.json`.
 # Pipe any content directly
 echo 'console.log("hello")' | snip --desc "example" --lang javascript
 
-# Or from a file
-cat main.rs | snip --desc "main function" --lang rust
+# Or share a file; language and title come from its name
+snip main.rs
 
 # View the snippet
 snip get 42
 
-# Get a sharable link
-echo "Check this: http://localhost:3000/s/42"
+# Posting prints the share URL, so it also works in scripts
+url=$(snip main.rs)
+echo "Check this: $url"
 ```
 
 ## CLI Usage
 
 ### Authentication
+
+Usernames accept 3-32 ASCII letters, digits, underscores, or hyphens. Passwords require at least 6 Unicode characters and at most 72 UTF-8 bytes.
 
 ```bash
 snip register <username>   # Create new account
@@ -87,17 +92,30 @@ snip logout                # Clear saved credentials
 
 ### Post Snippets
 
-```bash
-# Basic usage (reads from stdin)
-echo "code here" | snip
+Run `snip` or `snip -h` for a short list of useful commands. Help shows the current account and omits login and register when an API key is ready. Use `snip --help` for advanced commands and connection options. Hidden commands remain callable, so `snip login another-user` still switches accounts. Help uses local credentials and does not contact the server.
 
-# With description and language
-cat script.py | snip --desc "My script" --lang python
+```bash
+# Share a file, guessing syntax from its extension
+snip main.rs
+
+# Override the description and syntax
+snip LICENSE -d "Project license" -l markdown
+
+# An explicit post works the same way; -- ends option parsing
+snip post -d "" -l markdown -- LICENSE
+
+# Pipe text, or use - explicitly for stdin
+echo "code here" | snip
+cat script.py | snip - -l python
 
 # Available languages: bash, c, cpp, css, go, html, java, javascript,
 # json, kotlin, lua, markdown, php, python, ruby, rust, scala,
 # shell, sql, swift, typescript, yaml, zig (and plaintext)
 ```
+
+File posts use the filename as their default description. `-d ""` leaves it empty. Piped input has no automatic description or language. Files and stdin accept UTF-8 text up to 5000 Unicode characters.
+
+Posting writes only the share URL to stdout. In a terminal, a short scissors message appears on stderr. Redirects and command substitution keep stdout clean.
 
 ### Browse Snippets
 
@@ -139,7 +157,7 @@ Open `http://localhost:3000` to:
 ### Systemd (Manual Install)
 
 ```bash
-sudo cp snipped /usr/bin/
+sudo cp snipd /usr/bin/
 sudo cp systemd/snip.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now snip
@@ -149,40 +167,29 @@ sudo systemctl enable --now snip
 
 ```yaml
 services:
-  valkey:
-    image: valkey/valkey:9.0.3
-    container_name: snip-valkey
-    ports:
-      - "6379:6379"
-    volumes:
-      - valkey-data:/data
-    restart: unless-stopped
-
   snip:
     build: .
-    container_name: snip
-    image: skorotkiewicz/snip:latest
+    image: snip
     ports:
       - "3000:3000"
     volumes:
-      # - ./data:/data
       - snip_data:/data
     environment:
-      - DATABASE_URL=sqlite:/data/snip.db
-      - REDIS_URL=redis://snip-valkey:6379
-      - RUST_LOG=info
-    depends_on:
-      - valkey
+      DATABASE_URL: sqlite:/data/snip.db
+      RUST_LOG: info
     restart: unless-stopped
 
 volumes:
   snip_data:
-  valkey-data:
 ```
 
 ## API Reference
 
-All endpoints (except where noted) return JSON.
+Successful endpoints return JSON except raw content and empty deletion responses. Errors return plain text. Timestamps use RFC 3339 in UTC.
+
+SQLite stores endpoint rate limits and view counts. Registration allows 5 attempts per hour per peer IP; login allows 10 attempts per minute per username. Snippet creation and forks allow 10 attempts per minute per user, comments allow 30, and password changes allow 10. These limits survive server restarts. The global limit replenishes 10 requests per second per peer IP with a burst of 60. Peer IP means the direct TCP client, including a reverse proxy.
+
+Snippet content allows 5000 Unicode characters, descriptions 255, and comments 1000. Comments support up to 8 nested levels.
 
 ### Authentication
 
@@ -244,10 +251,26 @@ DELETE /api/comments/456 -H "X-API-Key: xxx"
 
 ## Architecture
 
-- **Backend**: Axum (Rust) + SQLite
-- **Frontend**: Vanilla HTML/JS (embedded in binary, no external assets)
+- **Backend**: Axum (Rust) + SQLite, with no cache service required
+- **Frontend**: Vanilla HTML/JS embedded in the binary
 - **CLI**: Rust + clap + reqwest
 - **Syntax Highlighting**: highlight.js (CDN)
+
+| Module | Responsibility |
+|--------|----------------|
+| `server.rs` | Opens SQLite, applies migrations, wires routes and middleware, handles shutdown |
+| `auth_user.rs` | Resolves API keys before handlers run |
+| `handlers.rs` | Validates requests and implements snippet, account, and comment operations |
+| `database.rs` | Owns the SQLx pool and enforces atomic fixed-window rate limits |
+| `app_error.rs`, `middleware.rs` | Map failures to HTTP responses and prevent response caching |
+| `web.rs` | Embeds the UI, which calls the same HTTP API as the CLI |
+| `cli.rs` | Manages local credentials and makes HTTP requests |
+
+SQLite is the source of truth for views, rate limits, stars, forks, and comments. Fork counts come from fork rows. The UI collapses long code blocks visually; API and raw responses always return the full content.
+
+## Development
+
+Run `just check` for formatting and Clippy, `just test` for Rust tests, and `just web-test` for browser tests. Browser tests require Node.js and Chromium and use no npm dependencies. Set `CHROMIUM` if the executable has a different name.
 
 ## License
 

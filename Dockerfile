@@ -8,7 +8,7 @@ COPY Cargo.toml Cargo.lock ./
 COPY src ./src
 COPY migrations ./migrations
 
-RUN cargo build --release
+RUN cargo build --release --locked
 
 # Runtime stage
 FROM alpine:latest
@@ -18,9 +18,8 @@ RUN apk add --no-cache ca-certificates
 WORKDIR /app
 
 # Copy binaries and static files
-COPY --from=builder /app/target/release/snipped /app/snipped
+COPY --from=builder /app/target/release/snipd /app/snipd
 COPY --from=builder /app/target/release/snip /app/snip
-COPY --from=builder /app/migrations ./migrations
 
 # Create data directory for SQLite
 RUN mkdir -p /data
@@ -32,4 +31,4 @@ EXPOSE 3000
 
 VOLUME ["/data"]
 
-CMD ["./snipped"]
+CMD ["./snipd"]
